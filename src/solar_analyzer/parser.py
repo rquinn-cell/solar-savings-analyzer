@@ -1,0 +1,102 @@
+import os
+import re
+import pdfplumber
+from decimal import Decimal
+from datetime import datetime
+from solar_analyzer.models import XcelSolarBill, EnergyUsage
+
+# Get the directory where THIS script is located
+#BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Join it with your filename
+#PDF_PATH = os.path.join(BASE_DIR, "XcelBill-2026-01-02.pdf")
+
+def extract_total_kwh(pattern, text):
+    """
+    Finds ALL occurrences of the pattern and returns the SUM.
+    Handles the 'zero-day' anomaly by aggregating all readings.
+    """
+    matches = re.findall(pattern, text)
+    if matches:
+        # Convert all found strings to Decimals and sum them
+        return sum(Decimal(m.replace(',', '')) for m in matches)
+    return Decimal("0.0")
+
+def parse_date(date_str):
+    # Handles 11/23/25 -> 2025-11-23
+    # We use %y (lowercase) for 2-digit years
+    return datetime.strptime(date_str, "%m/%d/%y").date()
+
+def parse_xcel_pdf(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Could not find file at {path}")
+
+    with pdfplumber.open(path) as pdf:
+        # --- Page 1: Metadata ---
+        page_1_text = pdf.pages[0].extract_text()
+        
+        # Extract Account Number: 53-0012756531-8
+        acc_match = re.search(r"(\d{2}-\d{10}-\d)", page_1_text)
+        account_num = acc_match.group(1) if acc_match else "UNKNOWN"
+        
+        # Extract Service Dates: 11/23/25-12/25/25
+        # We look for the date range pattern
+        dates_match = re.search(r"(\d{2}/\d{2}/\d{2})-(\d{2}/\d{2}/\d{2})", page_1_text)
+        start_dt = parse_date(dates_match.group(1)) if dates_match else None
+        end_dt = parse_date(dates_match.group(2)) if dates_match else None
+
+        # --- Page 2: Meter Data ---
+        page_2_text = pdf.pages[1].extract_text()
+        
+        delivered_on = extract_total_kwh(r"On\s*Peak\s*Delivered\s*by\s*Xcel\s+(\d+)", page_2_text)
+        delivered_off = extract_total_kwh(r"Off\s*Peak\s*Delivered\s*by\s*Xcel\s+([\d,]+)", page_2_text)
+        
+        received_on = extract_total_kwh(r"On\s*Pk\s*Delivered\s*by\s*Customer\s+(\d+)", page_2_text)
+        received_off = extract_total_kwh(r"Off\s*Pk\s*Delivered\s*by\s*Customer\s+([\d,]+)", page_2_text)
+        
+        # Return the high-level object we defined in models.py
+        return XcelSolarBill(
+            account_number=account_num,
+            statement_date=None, # We can add this later from the 'Statement Date' field
+            service_start=start_dt,
+            service_end=end_dt,
+            delivered_by_xcel=EnergyUsage(on_peak_kwh=delivered_on, off_peak_kwh=delivered_off),
+            delivered_by_customer=EnergyUsage(on_peak_kwh=received_on, off_peak_kwh=received_off),
+            rollover_bank_balance=Decimal("0.00"),
+            total_electric_due=Decimal("0.00") # Placeholder until we extract this
+        )
+
+#old parsing logic
+"""         # Page 2 contains the meter details
+        page_text = pdf.pages[1].extract_text()
+        
+        # Pattern: Look for the label, skip whitespace/labels, grab the number
+        # Example: 'On Pk Net Delivered by Xcel 86'
+        on_peak_delivered = extract_kwh(r"On Pk Net Delivered by Xcel\s+(\d+)", page_text)
+        off_peak_delivered = extract_kwh(r"Off Pk Net Delivered by Xcel\s+([\d,]+)", page_text)
+        
+        # Customer Delivered (Solar Export)
+        on_peak_received = extract_kwh(r"On Pk Net Received from Customer\s+(\d+)", page_text)
+        off_peak_received = extract_kwh(r"Off Pk Net Received from Customer\s+([\d,]+)", page_text)
+        
+        return EnergyUsage(on_peak_kwh=on_peak_delivered, off_peak_kwh=off_peak_delivered), \
+               EnergyUsage(on_peak_kwh=on_peak_received, off_peak_kwh=off_peak_received)
+ """
+
+# This is a simple function to peek at the PDF content.
+""" def peek_at_bill(pdf_path):
+    if not os.path.exists(pdf_path):
+        print(f"ERROR: Could not find file at {pdf_path}")
+        return
+        
+    with pdfplumber.open(pdf_path) as pdf:
+        # Page 2 contains the RETOU (Time of Use) breakdown
+        page = pdf.pages[1] 
+        text = page.extract_text()
+        
+        print(f"--- Raw Extraction from Page 2 ---\n")
+        print(text)
+
+if __name__ == "__main__":
+    # Point this to your actual file path
+    peek_at_bill(PDF_PATH)
+ """

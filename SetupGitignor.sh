@@ -1,0 +1,6 @@
+echo ".venv/
+__pycache__/
+.pytest_cache/
+data/raw/*
+data/processed/*
+.env" > .gitignore

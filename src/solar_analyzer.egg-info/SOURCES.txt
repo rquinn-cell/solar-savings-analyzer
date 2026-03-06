@@ -1,0 +1,9 @@
+README.md
+setup.py
+src/solar_analyzer/__init__.py
+src/solar_analyzer/models.py
+src/solar_analyzer.egg-info/PKG-INFO
+src/solar_analyzer.egg-info/SOURCES.txt
+src/solar_analyzer.egg-info/dependency_links.txt
+src/solar_analyzer.egg-info/top_level.txt
+tests/test_bill_parser.py

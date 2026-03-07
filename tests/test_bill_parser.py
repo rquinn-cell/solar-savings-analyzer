@@ -22,8 +22,8 @@ def test_actual_pdf_parsing():
     assert bill.delivered_by_customer.total_kwh == expected_delivered_by_customer_total
     assert bill.net_usage.on_peak_kwh == expected_net_on_peak
     assert bill.net_usage.off_peak_kwh == expected_net_off_peak
-    #assert bill.statement_date.month == 1
-    #assert bill.total_electric_due == expected_total_electric_due
+    assert bill.statement_date == date(2026, 1, 2)
+    assert bill.total_electric_due == expected_total_electric_due
 
 def test_savings_calculation_logic():
     # This represents what our parser SHOULD return

@@ -31,14 +31,28 @@ def parse_xcel_pdf(path):
         raise FileNotFoundError(f"Could not find file at {path}")
 
     with pdfplumber.open(path) as pdf:
-        # --- Page 1: Metadata ---
+        # --- Page 1: Metadata & Summary ---
         page_1_text = pdf.pages[0].extract_text()
-        
-        # Extract Account Number: 53-0012756531-8
+
+        # 1. Statement Date (Format: 01/02/2026) and Due Date
+        # This looks for the label, then allows for any characters (including quotes and newlines) 
+        # until it hits a date pattern. re.DOTALL is the key here.
+        stmt_match = re.search(r"STATEMENT\s*DATE\s*[^/]*?(\d{2}/\d{2}/\d{4})", page_1_text, re.IGNORECASE)
+        statement_date = datetime.strptime(stmt_match.group(1), "%m/%d/%Y").date() if stmt_match else None
+
+        due_match = re.search(r"DUE\s*DATE\s*[^/]*?(\d{2}/\d{2}/\d{4})", page_1_text, re.IGNORECASE)
+        due_date = datetime.strptime(due_match.group(1), "%m/%d/%Y").date() if due_match else None
+
+        # 2. Total Electric Cost (The $155.67 value)
+        # Targets the "Electricity Service" line in the summary
+        elec_due_match = re.search(r"Electricity\s*+Service.*?\$([\d,.]+)", page_1_text)
+        total_electric_due = Decimal(elec_due_match.group(1).replace(',', '')) if elec_due_match else Decimal("0.00")        
+
+        # 3. Extract Account Number: 53-0012756531-8
         acc_match = re.search(r"(\d{2}-\d{10}-\d)", page_1_text)
         account_num = acc_match.group(1) if acc_match else "UNKNOWN"
         
-        # Extract Service Dates: 11/23/25-12/25/25
+        # 4. Extract Service Dates: 11/23/25-12/25/25
         # We look for the date range pattern
         dates_match = re.search(r"(\d{2}/\d{2}/\d{2})-(\d{2}/\d{2}/\d{2})", page_1_text)
         start_dt = parse_date(dates_match.group(1)) if dates_match else None
@@ -56,13 +70,13 @@ def parse_xcel_pdf(path):
         # Return the high-level object we defined in models.py
         return XcelSolarBill(
             account_number=account_num,
-            statement_date=None, # We can add this later from the 'Statement Date' field
+            statement_date=statement_date, 
             service_start=start_dt,
             service_end=end_dt,
             delivered_by_xcel=EnergyUsage(on_peak_kwh=delivered_on, off_peak_kwh=delivered_off),
             delivered_by_customer=EnergyUsage(on_peak_kwh=received_on, off_peak_kwh=received_off),
             rollover_bank_balance=Decimal("0.00"),
-            total_electric_due=Decimal("0.00") # Placeholder until we extract this
+            total_electric_due=total_electric_due # Use the extracted value
         )
 
 #old parsing logic

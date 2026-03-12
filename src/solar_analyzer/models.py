@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from datetime import date
 from typing import Optional
@@ -13,6 +13,16 @@ class EnergyUsage:
     def total_kwh(self) -> Decimal:
         return self.on_peak_kwh + self.off_peak_kwh 
     
+@dataclass
+class SolarBankState:
+    on_peak_kwh: Decimal = Decimal("0.00")
+    off_peak_kwh: Decimal = Decimal("0.00")
+
+    def __add__(self, other):
+        return SolarBankState(
+            on_peak_kwh=self.on_peak_kwh + other.on_peak_kwh,
+            off_peak_kwh=self.off_peak_kwh + other.off_peak_kwh
+        )
 
 @dataclass
 class XcelSolarBill:
@@ -27,8 +37,8 @@ class XcelSolarBill:
     delivered_by_customer: EnergyUsage
 
     # Financials [cite: 106, 107]
-    rollover_bank_balance: Decimal
-    total_electric_due: Decimal
+    rollover_bank_balance: Decimal = Decimal("0.00")
+    total_electric_due: Decimal = Decimal("0.00")
 
     @property
     def net_usage(self) -> EnergyUsage:

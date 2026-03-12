@@ -60,7 +60,15 @@ def parse_xcel_pdf(path):
 
         # --- Page 2: Meter Data ---
         page_2_text = pdf.pages[1].extract_text()
-        
+
+        # Guardrail: Check for Legacy 3-Tier (RE-TOU) structure
+        if "MidPk" in page_2_text:
+            raise ValueError(
+                f"Legacy 3-tier bill detected for statement date {statement_date}. "
+                "The current calculator only supports the 2-tier (On-Peak/Off-Peak) "
+                "RE-TOU structure introduced in late 2025."
+            )
+
         delivered_on = extract_total_kwh(r"On\s*Peak\s*Delivered\s*by\s*Xcel\s+(\d+)", page_2_text)
         delivered_off = extract_total_kwh(r"Off\s*Peak\s*Delivered\s*by\s*Xcel\s+([\d,]+)", page_2_text)
         

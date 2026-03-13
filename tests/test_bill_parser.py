@@ -48,7 +48,7 @@ def test_savings_calculation_logic():
     assert shadow > Decimal("90.00")
 
 from src.solar_analyzer.scrubber import BillScrubber
-
+@pytest.mark.skipif(not BILLS_EXIST, reason="PDFs not available in this environment")
 def test_parsing_to_json_flow():
     # Use one of your 2026 PDFs as the source
     test_pdf = "bills/XcelBill-2026-03-03.pdf"

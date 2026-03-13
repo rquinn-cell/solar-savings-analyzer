@@ -1,0 +1,74 @@
+[
+    {
+        "statement_date": "2026-01-02",
+        "service_period": {
+            "start": "2025-11-23",
+            "end": "2025-12-25"
+        },
+        "usage_delivered": {
+            "on_peak": 86.0,
+            "off_peak": 1165.0
+        },
+        "usage_received": {
+            "on_peak": 0.0,
+            "off_peak": 235.0
+        },
+        "rates": {
+            "on_peak": 0.18331,
+            "off_peak": 0.06792,
+            "cepr_fs": 0.0125
+        },
+        "cepr_usage": 119.47,
+        "financials": {
+            "total_due": 155.67
+        }
+    },
+    {
+        "statement_date": "2026-02-02",
+        "service_period": {
+            "start": "2025-12-25",
+            "end": "2026-01-27"
+        },
+        "usage_delivered": {
+            "on_peak": 78.0,
+            "off_peak": 822.0
+        },
+        "usage_received": {
+            "on_peak": 0.0,
+            "off_peak": 303.0
+        },
+        "rates": {
+            "on_peak": 0.18331,
+            "off_peak": 0.06792,
+            "cepr_fs": 0.0125
+        },
+        "cepr_usage": 125.33,
+        "financials": {
+            "total_due": 107.1
+        }
+    },
+    {
+        "statement_date": "2026-03-03",
+        "service_period": {
+            "start": "2026-01-27",
+            "end": "2026-02-26"
+        },
+        "usage_delivered": {
+            "on_peak": 47.0,
+            "off_peak": 575.0
+        },
+        "usage_received": {
+            "on_peak": 0.0,
+            "off_peak": 536.0
+        },
+        "rates": {
+            "on_peak": 0.18331,
+            "off_peak": 0.06792,
+            "cepr_fs": 0.0125
+        },
+        "cepr_usage": 126.64,
+        "financials": {
+            "total_due": 34.65
+        }
+    }
+]

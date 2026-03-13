@@ -1,6 +1,11 @@
-.venv/
+# Python artifacts
 __pycache__/
-.pytest_cache/
-data/raw/*
-data/processed/*
+*.py[cod]
+*$py.class
+.venv/
+
+# Project Specific
+bills/
+*.pdf
+data/raw_data.json
 .env

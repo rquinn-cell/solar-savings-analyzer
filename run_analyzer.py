@@ -19,7 +19,7 @@ def run_seasonal_analysis(bill_paths):
             # Calculate financial metrics
             shadow = calc.calculate_shadow_cost()
             actual = bill.total_electric_due
-            savings = calc.estimate_monthly_savings(actual)
+            savings = calc.estimate_monthly_savings()
             total_savings += savings
             
             # Update Bank State for the next month
@@ -30,10 +30,12 @@ def run_seasonal_analysis(bill_paths):
             bank_str = f"{bank.on_peak_kwh:>4.0f} / {bank.off_peak_kwh:>4.0f} kWh"
             
             print(f"{str(bill.statement_date):<12} | {bank_str:<18} | ${shadow:>10.2f} | ${actual:>8.2f} | ${savings:>8.2f}")
+            #print(f"DEBUG: {bill.statement_date} | CEPR Daily Factor: {bill.cepr_fs_kwh / bill.days_in_cycle:.2f}")
+ 
         except ValueError as e:
             print(f"SKIPPING {path}: {e}")
             continue # move to the next bill if we hit a parsing error or legacy bill
-        
+
     print("-" * 75)
     print(f"{'TOTAL CUMULATIVE SAVINGS':<47} | ${total_savings:>8.2f}")
 

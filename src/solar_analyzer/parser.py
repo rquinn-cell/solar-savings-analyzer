@@ -35,6 +35,7 @@ def parse_xcel_pdf(path):
         page_1_text = pdf.pages[0].extract_text()
 
         # 1. Statement Date (Format: 01/02/2026) and Due Date
+
         # This looks for the label, then allows for any characters (including quotes and newlines) 
         # until it hits a date pattern. re.DOTALL is the key here.
         stmt_match = re.search(r"STATEMENT\s*DATE\s*[^/]*?(\d{2}/\d{2}/\d{4})", page_1_text, re.IGNORECASE)
@@ -58,11 +59,15 @@ def parse_xcel_pdf(path):
         start_dt = parse_date(dates_match.group(1)) if dates_match else None
         end_dt = parse_date(dates_match.group(2)) if dates_match else None
 
-        # --- Page 2: Meter Data ---
-        page_2_text = pdf.pages[1].extract_text()
+        ## --- Page 2: Meter Data ---
+        #page_2_text = pdf.pages[1].extract_text()
+        # Aggregate text from relevant pages to handle overflows
+        full_bill_text = ""
+        for page in pdf.pages[1:4]: # Scan Pages 2 thru 4
+            full_bill_text += page.extract_text()
 
         # Guardrail: Check for Legacy 3-Tier (RE-TOU) structure
-        if "MidPk" in page_2_text:
+        if "MidPk" in full_bill_text:
             is_january_transition = (statement_date.year == 2026 and statement_date.month == 1)
             if not is_january_transition:
                 raise ValueError(
@@ -71,13 +76,13 @@ def parse_xcel_pdf(path):
                     "RE-TOU structure introduced in late 2025."
                 )
 
-        delivered_on = extract_total_kwh(r"On\s*Peak\s*Delivered\s*by\s*Xcel\s+(\d+)", page_2_text)
-        delivered_off = extract_total_kwh(r"Off\s*Peak\s*Delivered\s*by\s*Xcel\s+([\d,]+)", page_2_text)
+        delivered_on = extract_total_kwh(r"On\s*Peak\s*Delivered\s*by\s*Xcel\s+(\d+)", full_bill_text)
+        delivered_off = extract_total_kwh(r"Off\s*Peak\s*Delivered\s*by\s*Xcel\s+([\d,]+)", full_bill_text)
         
-        received_on = extract_total_kwh(r"On\s*Pk\s*Delivered\s*by\s*Customer\s+(\d+)", page_2_text)
-        received_off = extract_total_kwh(r"Off\s*Pk\s*Delivered\s*by\s*Customer\s+([\d,]+)", page_2_text)
+        received_on = extract_total_kwh(r"On\s*Pk\s*Delivered\s*by\s*Customer\s+(\d+)", full_bill_text)
+        received_off = extract_total_kwh(r"Off\s*Pk\s*Delivered\s*by\s*Customer\s+([\d,]+)", full_bill_text)
         
-        # --- Page 2: Refined Rate Extraction ---
+        # --- Page 2-4: Refined Rate Extraction ---
 
         # 1. Initialize variables with Fallbacks 
         # (Using your known Jan rates as the defaults)
@@ -88,16 +93,16 @@ def parse_xcel_pdf(path):
 
         # 2. Perform Scraping
         # Pattern: Look for 'RETOU On-Peak', then energy, then '$' followed by rate
-        on_match = re.search(r"RETOU\s*On-Peak\s*[\d,.]+\s*kWh\s*\$([\d.]+)", page_2_text)
+        on_match = re.search(r"RETOU\s*On-Peak\s*[\d,.]+\s*kWh\s*\$([\d.]+)", full_bill_text)
         if on_match:
             on_rate = Decimal(on_match.group(1))
 
-        off_match = re.search(r"RETOU\s*Off-Peak\s*[\d,.]+\s*kWh\s*\$([\d.]+)", page_2_text)
+        off_match = re.search(r"RETOU\s*Off-Peak\s*[\d,.]+\s*kWh\s*\$([\d.]+)", full_bill_text)
         if off_match:
             off_rate = Decimal(off_match.group(1))
 
         # CEPR FS captures both the specific usage and the rate
-        cepr_match = re.search(r"CEPR\s*FS\s*([\d,.]+)\s*kWh\s*\$([\d.]+)", page_2_text)
+        cepr_match = re.search(r"CEPR\s*FS\s*([\d,.]+)\s*kWh\s*\$([\d.]+)", full_bill_text)
         if cepr_match:
             cepr_usage = Decimal(cepr_match.group(1))
             cepr_rate = Decimal(cepr_match.group(2))

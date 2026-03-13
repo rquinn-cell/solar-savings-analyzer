@@ -14,8 +14,12 @@ def test_summer_surplus_banking():
         delivered_by_xcel=EnergyUsage(on_peak_kwh=Decimal("100"), off_peak_kwh=Decimal("200")),
         delivered_by_customer=EnergyUsage(on_peak_kwh=Decimal("300"), off_peak_kwh=Decimal("500")),
         rollover_bank_balance=Decimal("0.00"),
-        total_electric_due=Decimal("15.00") # Just fixed fees
-    )
+        total_electric_due=Decimal("15.00"), # Just fixed fees
+        on_peak_rate=Decimal("0.183310"),
+        off_peak_rate=Decimal("0.067920"),
+        cepr_fs_rate=Decimal("0.012500"),
+        cepr_fs_kwh=Decimal("125.33") # Add a dummy value        
+     )
     
     calc = SolarSavingsCalculator(summer_bill)
     initial_bank = SolarBankState(on_peak_kwh=Decimal("0.0"), off_peak_kwh=Decimal("0.0"))
@@ -38,7 +42,11 @@ def test_bank_drain_logic():
         service_end=date(2026, 7, 1),
         delivered_by_xcel=EnergyUsage(on_peak_kwh=Decimal("100"), off_peak_kwh=Decimal("100")),
         delivered_by_customer=EnergyUsage(on_peak_kwh=Decimal("50"), off_peak_kwh=Decimal("50")),
-        total_electric_due=Decimal("50.00")
+        total_electric_due=Decimal("50.00"),
+        on_peak_rate=Decimal("0.183310"),
+        off_peak_rate=Decimal("0.067920"),
+        cepr_fs_rate=Decimal("0.012500"),
+        cepr_fs_kwh=Decimal("125.33") # Add a dummy value        
     )
     
     calc = SolarSavingsCalculator(cloudy_bill)

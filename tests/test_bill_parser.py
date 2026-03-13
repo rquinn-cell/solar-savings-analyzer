@@ -6,7 +6,10 @@ from src.solar_analyzer.models import XcelSolarBill, EnergyUsage # We will creat
 from src.solar_analyzer.parser import parse_xcel_pdf
 from src.solar_analyzer.calculator import SolarSavingsCalculator
 
-# This file will contain tests for the PDF parsing logic in parser.py
+import os
+# This checks if the 'bills' folder exists
+BILLS_EXIST = os.path.exists("bills/")
+@pytest.mark.skipif(not BILLS_EXIST, reason="PDFs not available in this environment")
 def test_actual_pdf_parsing():
     path = "bills/XcelBill-2026-01-02.pdf"
     bill = parse_xcel_pdf(path)

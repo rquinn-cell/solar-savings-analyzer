@@ -63,17 +63,44 @@ def parse_xcel_pdf(path):
 
         # Guardrail: Check for Legacy 3-Tier (RE-TOU) structure
         if "MidPk" in page_2_text:
-            raise ValueError(
-                f"Legacy 3-tier bill detected for statement date {statement_date}. "
-                "The current calculator only supports the 2-tier (On-Peak/Off-Peak) "
-                "RE-TOU structure introduced in late 2025."
-            )
+            is_january_transition = (statement_date.year == 2026 and statement_date.month == 1)
+            if not is_january_transition:
+                raise ValueError(
+                    f"Legacy 3-tier bill detected for statement date {statement_date}. "
+                    "The current calculator only supports the 2-tier (On-Peak/Off-Peak) "
+                    "RE-TOU structure introduced in late 2025."
+                )
 
         delivered_on = extract_total_kwh(r"On\s*Peak\s*Delivered\s*by\s*Xcel\s+(\d+)", page_2_text)
         delivered_off = extract_total_kwh(r"Off\s*Peak\s*Delivered\s*by\s*Xcel\s+([\d,]+)", page_2_text)
         
         received_on = extract_total_kwh(r"On\s*Pk\s*Delivered\s*by\s*Customer\s+(\d+)", page_2_text)
         received_off = extract_total_kwh(r"Off\s*Pk\s*Delivered\s*by\s*Customer\s+([\d,]+)", page_2_text)
+        
+        # --- Page 2: Refined Rate Extraction ---
+
+        # 1. Initialize variables with Fallbacks 
+        # (Using your known Jan rates as the defaults)
+        on_rate = Decimal("0.183310")
+        off_rate = Decimal("0.067920")
+        cepr_rate = Decimal("0.012500")
+        cepr_usage = Decimal("0.00")
+
+        # 2. Perform Scraping
+        # Pattern: Look for 'RETOU On-Peak', then energy, then '$' followed by rate
+        on_match = re.search(r"RETOU\s*On-Peak\s*[\d,.]+\s*kWh\s*\$([\d.]+)", page_2_text)
+        if on_match:
+            on_rate = Decimal(on_match.group(1))
+
+        off_match = re.search(r"RETOU\s*Off-Peak\s*[\d,.]+\s*kWh\s*\$([\d.]+)", page_2_text)
+        if off_match:
+            off_rate = Decimal(off_match.group(1))
+
+        # CEPR FS captures both the specific usage and the rate
+        cepr_match = re.search(r"CEPR\s*FS\s*([\d,.]+)\s*kWh\s*\$([\d.]+)", page_2_text)
+        if cepr_match:
+            cepr_usage = Decimal(cepr_match.group(1))
+            cepr_rate = Decimal(cepr_match.group(2))
         
         # Return the high-level object we defined in models.py
         return XcelSolarBill(
@@ -84,25 +111,13 @@ def parse_xcel_pdf(path):
             delivered_by_xcel=EnergyUsage(on_peak_kwh=delivered_on, off_peak_kwh=delivered_off),
             delivered_by_customer=EnergyUsage(on_peak_kwh=received_on, off_peak_kwh=received_off),
             rollover_bank_balance=Decimal("0.00"),
-            total_electric_due=total_electric_due # Use the extracted value
+            total_electric_due=total_electric_due, # Use the extracted value
+            on_peak_rate=on_rate,
+            off_peak_rate=off_rate,
+            cepr_fs_rate=cepr_rate,
+            cepr_fs_kwh=cepr_usage
         )
 
-#old parsing logic
-"""         # Page 2 contains the meter details
-        page_text = pdf.pages[1].extract_text()
-        
-        # Pattern: Look for the label, skip whitespace/labels, grab the number
-        # Example: 'On Pk Net Delivered by Xcel 86'
-        on_peak_delivered = extract_kwh(r"On Pk Net Delivered by Xcel\s+(\d+)", page_text)
-        off_peak_delivered = extract_kwh(r"Off Pk Net Delivered by Xcel\s+([\d,]+)", page_text)
-        
-        # Customer Delivered (Solar Export)
-        on_peak_received = extract_kwh(r"On Pk Net Received from Customer\s+(\d+)", page_text)
-        off_peak_received = extract_kwh(r"Off Pk Net Received from Customer\s+([\d,]+)", page_text)
-        
-        return EnergyUsage(on_peak_kwh=on_peak_delivered, off_peak_kwh=off_peak_delivered), \
-               EnergyUsage(on_peak_kwh=on_peak_received, off_peak_kwh=off_peak_received)
- """
 
 # This is a simple function to peek at the PDF content.
 """ def peek_at_bill(pdf_path):

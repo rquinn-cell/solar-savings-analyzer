@@ -40,6 +40,13 @@ class XcelSolarBill:
     rollover_bank_balance: Decimal = Decimal("0.00")
     total_electric_due: Decimal = Decimal("0.00")
 
+    # scrape rates from the bill
+    on_peak_rate: Decimal = Decimal("0.00")
+    off_peak_rate: Decimal = Decimal("0.00")
+    cepr_fs_rate: Decimal = Decimal("0.00")
+    # get the cepr_fs_kwh usage
+    cepr_fs_kwh: Decimal = Decimal("0.00")
+    
     @property
     def net_usage(self) -> EnergyUsage:
         """Calculates the Net values seen in the PDF."""
@@ -48,3 +55,17 @@ class XcelSolarBill:
             off_peak_kwh=self.delivered_by_xcel.off_peak_kwh - self.delivered_by_customer.off_peak_kwh
         )
     
+    def to_scrubbed_dict(self):
+        """Returns the bill data minus PII like Account Number."""
+        return {
+            "date": str(self.statement_date),
+            "usage": {
+                "on_peak": float(self.delivered_by_xcel.on_peak_kwh),
+                "off_peak": float(self.delivered_by_xcel.off_peak_kwh)
+            },
+            "rates": {
+                "on_peak": float(self.on_peak_rate),
+                "off_peak": float(self.off_peak_rate)
+            },
+            "total_due": float(self.total_electric_due)
+        }

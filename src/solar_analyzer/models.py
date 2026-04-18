@@ -17,6 +17,7 @@ class EnergyUsage:
 class SolarBankState:
     on_peak_kwh: Decimal = Decimal("0.00")
     off_peak_kwh: Decimal = Decimal("0.00")
+    dollar_balance: Decimal = Decimal("0.00") # <--- New Field: Tracks the Rollover Bank Dollar Credit
 
     def __add__(self, other):
         return SolarBankState(
@@ -46,7 +47,12 @@ class XcelSolarBill:
     cepr_fs_rate: Decimal = Decimal("0.00")
     # get the cepr_fs_kwh usage
     cepr_fs_kwh: Decimal = Decimal("0.00")
-    
+    # New financial fields for the bank
+    rollover_bank_balance: Decimal = Decimal("0.00") # The total $ balance reported on the bill    
+
+    # We should also capture the specific credits from the bill if possible
+    # to help the calculator stay in sync with Xcel's math
+
     @property
     def net_usage(self) -> EnergyUsage:
         """Calculates the Net values seen in the PDF."""

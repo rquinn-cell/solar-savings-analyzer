@@ -44,20 +44,46 @@ def parse_xcel_pdf(path):
         due_match = re.search(r"DUE\s*DATE\s*[^/]*?(\d{2}/\d{2}/\d{4})", page_1_text, re.IGNORECASE)
         due_date = datetime.strptime(due_match.group(1), "%m/%d/%Y").date() if due_match else None
 
-        # 2. Total Electric Cost (The $155.67 value)
-        # Targets the "Electricity Service" line in the summary
-        elec_due_match = re.search(r"Electricity\s*+Service.*?\$([\d,.]+)", page_1_text)
-        total_electric_due = Decimal(elec_due_match.group(1).replace(',', '')) if elec_due_match else Decimal("0.00")        
+        # 2. # Look for Electricity Service line
+        # Example: "Electricity Service", "02/26/26-03/29/26", "465 kWh", "-$15.72 CR"
+        elec_match = re.search(r"Electricity\s+Service.*?([-\$]?[\d\.,]+)\s*(CR)?", page_1_text)
+        total_electric_due = Decimal("0.00")
 
+        if elec_match:
+            val_str = elec_match.group(1).replace('$', '').replace(',', '')
+            total_electric_due = Decimal(val_str)
+            # If "CR" was found, it's a credit (negative cost)
+            if elec_match.group(2) == "CR":
+                total_electric_due = -abs(total_electric_due)
+                
         # 3. Extract Account Number: 53-0012756531-8
         acc_match = re.search(r"(\d{2}-\d{10}-\d)", page_1_text)
         account_num = acc_match.group(1) if acc_match else "UNKNOWN"
-        
+
         # 4. Extract Service Dates: 11/23/25-12/25/25
         # We look for the date range pattern
         dates_match = re.search(r"(\d{2}/\d{2}/\d{2})-(\d{2}/\d{2}/\d{2})", page_1_text)
         start_dt = parse_date(dates_match.group(1)) if dates_match else None
         end_dt = parse_date(dates_match.group(2)) if dates_match else None
+
+        # 5. Capture the Bank Balance (The 'Sweep' amount from Page 1)
+        # Look for Other Recurring Charges
+        # It might look like: "Other Recurring Charges",,,"\$24 19\n"
+        bank_match = re.search(r"Other\s+Recurring\s+Charges.*?([\$]?[\d\.,\s]+)", page_1_text)
+        rollover_bank_balance = Decimal("0.00")
+
+        if bank_match:
+            # Remove $, commas, and any weird spaces between dollars and cents
+            clean_bank = bank_match.group(1).replace('$', '').replace(',', '').strip()
+            # Sometimes PDF text extraction puts a space where the decimal should be
+            if " " in clean_bank and "." not in clean_bank:
+                clean_bank = clean_bank.replace(" ", ".")
+            rollover_bank_balance = Decimal(clean_bank)
+
+        # 6. Capture the Net Usage (for verification)
+        # We need to ensure we grab the "CR" if it's a credit
+        # Example: -$15.72 CR
+        electricity_service_match = re.search(r"Electricity\s+Service.*?([-\$]?[\d\.,]+\s*CR|[ \d\.,]+)", page_1_text)
 
         ## --- Page 2: Meter Data ---
         #page_2_text = pdf.pages[1].extract_text()
@@ -67,14 +93,14 @@ def parse_xcel_pdf(path):
             full_bill_text += page.extract_text()
 
         # Guardrail: Check for Legacy 3-Tier (RE-TOU) structure
-        if "MidPk" in full_bill_text:
-            is_january_transition = (statement_date.year == 2026 and statement_date.month == 1)
-            if not is_january_transition:
-                raise ValueError(
-                    f"Legacy 3-tier bill detected for statement date {statement_date}. "
-                    "The current calculator only supports the 2-tier (On-Peak/Off-Peak) "
-                    "RE-TOU structure introduced in late 2025."
-                )
+        # if "MidPk" in full_bill_text:
+        #     is_january_transition = (statement_date.year == 2026 and statement_date.month == 1)
+        #     if not is_january_transition:
+        #         raise ValueError(
+        #             f"Legacy 3-tier bill detected for statement date {statement_date}. "
+        #             "The current calculator only supports the 2-tier (On-Peak/Off-Peak) "
+        #             "RE-TOU structure introduced in late 2025."
+        #         )
 
         delivered_on = extract_total_kwh(r"On\s*Peak\s*Delivered\s*by\s*Xcel\s+(\d+)", full_bill_text)
         delivered_off = extract_total_kwh(r"Off\s*Peak\s*Delivered\s*by\s*Xcel\s+([\d,]+)", full_bill_text)
@@ -82,6 +108,14 @@ def parse_xcel_pdf(path):
         received_on = extract_total_kwh(r"On\s*Pk\s*Delivered\s*by\s*Customer\s+(\d+)", full_bill_text)
         received_off = extract_total_kwh(r"Off\s*Pk\s*Delivered\s*by\s*Customer\s+([\d,]+)", full_bill_text)
         
+        # Use the function you already have at the top of the file!
+        mid_delivered = extract_total_kwh(r"RETOU\s+Mid-Peak\s+Usage\s+([\d\.,]+)", full_bill_text)
+        mid_received = extract_total_kwh(r"RETOU\s+Mid-Peak\s+Gen\s+([\d\.,]+)", full_bill_text)
+
+        # Fold Mid-Peak into On-Peak for our 2-tier model
+        final_on_peak_delivered = delivered_on + mid_delivered
+        final_on_peak_received = received_on + mid_received
+
         # --- Page 2-4: Refined Rate Extraction ---
 
         # 1. Initialize variables with Fallbacks 
@@ -113,14 +147,13 @@ def parse_xcel_pdf(path):
             statement_date=statement_date, 
             service_start=start_dt,
             service_end=end_dt,
-            delivered_by_xcel=EnergyUsage(on_peak_kwh=delivered_on, off_peak_kwh=delivered_off),
-            delivered_by_customer=EnergyUsage(on_peak_kwh=received_on, off_peak_kwh=received_off),
-            rollover_bank_balance=Decimal("0.00"),
-            total_electric_due=total_electric_due, # Use the extracted value
+            delivered_by_xcel=EnergyUsage(on_peak_kwh=final_on_peak_delivered, off_peak_kwh=delivered_off),
+            delivered_by_customer=EnergyUsage(on_peak_kwh=final_on_peak_received, off_peak_kwh=received_off),            total_electric_due=total_electric_due, # Use the extracted value
             on_peak_rate=on_rate,
             off_peak_rate=off_rate,
             cepr_fs_rate=cepr_rate,
-            cepr_fs_kwh=cepr_usage
+            cepr_fs_kwh=cepr_usage,
+            rollover_bank_balance=rollover_bank_balance
         )
 
 

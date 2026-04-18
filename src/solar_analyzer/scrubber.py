@@ -33,7 +33,9 @@ class BillScrubber:
             },
             "cepr_usage": float(bill.cepr_fs_kwh),
             "financials": {
-                "total_due": float(bill.total_electric_due)
+                "total_due": float(bill.total_electric_due),
+                # NEW: Track the reported solar bank state
+                "bank_dollar_balance": float(bill.rollover_bank_balance)
             }
         }
 

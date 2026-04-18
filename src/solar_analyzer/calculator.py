@@ -55,6 +55,11 @@ class SolarSavingsCalculator:
         
         return SolarBankState(on_peak_kwh=new_on_peak, off_peak_kwh=new_off_peak)
     
+    def calculate_excess_value(self, excess_kwh: Decimal, rate: Decimal) -> Decimal:
+        # Xcel also credits the variable riders (ECA, PCCA, etc.) 
+        # Usually this is effectively the (Total Rate * Excess kWh)
+        return excess_kwh * rate
+
     def calculate_billed_kwh(self, starting_bank: SolarBankState) -> EnergyUsage:
         """
         Calculates the kWh you are actually charged for after draining the bank.
@@ -68,8 +73,7 @@ class SolarSavingsCalculator:
         billed_off = max(Decimal("0.00"), net_needed_off - starting_bank.off_peak_kwh)
         
         return EnergyUsage(on_peak_kwh=billed_on, off_peak_kwh=billed_off)
-        
-
+    
     def _calculate_variable_costs(self, usage_on: Decimal, usage_off: Decimal) -> Decimal:
         """
 

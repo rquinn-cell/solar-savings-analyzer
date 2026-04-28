@@ -44,18 +44,32 @@ def parse_xcel_pdf(path):
         due_match = re.search(r"DUE\s*DATE\s*[^/]*?(\d{2}/\d{2}/\d{4})", page_1_text, re.IGNORECASE)
         due_date = datetime.strptime(due_match.group(1), "%m/%d/%Y").date() if due_match else None
 
-        # 2. # Look for Electricity Service line
-        # Example: "Electricity Service", "02/26/26-03/29/26", "465 kWh", "-$15.72 CR"
-        elec_match = re.search(r"Electricity\s+Service.*?([-\$]?[\d\.,]+)\s*(CR)?", page_1_text)
-        total_electric_due = Decimal("0.00")
+        # 2. Total Electric Due
+        # Matches "ElectricityService" or "Electricity Service"
+        # Handles "-$15.72 CR" or "$90.93"
+        # Updated regex to be much more specific about the ending
+        # It looks for: ElectricityService ... something ... then a number at the end
+        elec_pat = r"Electricity\s*Service[\s\S]*?([-\$]?[\d\.,]+)\s*(CR)?\s*(?:\n|$)"
+        elec_match = re.search(elec_pat, page_1_text)
 
+        total_electric_due = Decimal("0.00")
         if elec_match:
-            val_str = elec_match.group(1).replace('$', '').replace(',', '')
-            total_electric_due = Decimal(val_str)
-            # If "CR" was found, it's a credit (negative cost)
-            if elec_match.group(2) == "CR":
-                total_electric_due = -abs(total_electric_due)
-                
+            # 1. Clean the string
+            raw_val = elec_match.group(1).replace('$', '').replace(',', '').strip()
+            
+            # 2. Handle the "2.0" bug: 
+            # If the regex accidentally caught "2026" from a date, 
+            # we need to ensure we are grabbing the actual currency.
+            # Let's use findall and take the LAST match on that line to be safe.
+            all_values = re.findall(r"([-\$]?\d{1,3}(?:[\.,]\d{2,3})+)\s*(CR)?", elec_match.group(0))
+            if all_values:
+                # Take the last one (the price)
+                val_str, cr_label = all_values[-1]
+                val_str = val_str.replace('$', '').replace(',', '')
+                total_electric_due = Decimal(val_str)
+                if cr_label == "CR":
+                    total_electric_due = -abs(total_electric_due)
+
         # 3. Extract Account Number: 53-0012756531-8
         acc_match = re.search(r"(\d{2}-\d{10}-\d)", page_1_text)
         account_num = acc_match.group(1) if acc_match else "UNKNOWN"
@@ -66,24 +80,22 @@ def parse_xcel_pdf(path):
         start_dt = parse_date(dates_match.group(1)) if dates_match else None
         end_dt = parse_date(dates_match.group(2)) if dates_match else None
 
-        # 5. Capture the Bank Balance (The 'Sweep' amount from Page 1)
-        # Look for Other Recurring Charges
-        # It might look like: "Other Recurring Charges",,,"\$24 19\n"
-        bank_match = re.search(r"Other\s+Recurring\s+Charges.*?([\$]?[\d\.,\s]+)", page_1_text)
+        # 5. Bank Balance (The April Bill "No Decimal" Fix)
+        # Matches "Other Recurring Charges" then looks for digits/spaces
+        bank_pat = r"Other\s*Recurring\s*Charges[\s\S]*?\$?\s*([\d\s\.,]{2,7})"
+        bank_match = re.search(bank_pat, page_1_text)
+        
         rollover_bank_balance = Decimal("0.00")
-
         if bank_match:
-            # Remove $, commas, and any weird spaces between dollars and cents
-            clean_bank = bank_match.group(1).replace('$', '').replace(',', '').strip()
-            # Sometimes PDF text extraction puts a space where the decimal should be
-            if " " in clean_bank and "." not in clean_bank:
-                clean_bank = clean_bank.replace(" ", ".")
-            rollover_bank_balance = Decimal(clean_bank)
-
-        # 6. Capture the Net Usage (for verification)
-        # We need to ensure we grab the "CR" if it's a credit
-        # Example: -$15.72 CR
-        electricity_service_match = re.search(r"Electricity\s+Service.*?([-\$]?[\d\.,]+\s*CR|[ \d\.,]+)", page_1_text)
+            raw_val = bank_match.group(1).strip()
+            # If we see "24 19" (space instead of dot), fix it
+            if " " in raw_val and "." not in raw_val:
+                raw_val = raw_val.replace(" ", ".")
+            
+            # Clean up commas and remaining spaces
+            clean_val = raw_val.replace(',', '').replace(' ', '')
+            if clean_val:
+                rollover_bank_balance = Decimal(clean_val)
 
         ## --- Page 2: Meter Data ---
         #page_2_text = pdf.pages[1].extract_text()
@@ -108,13 +120,21 @@ def parse_xcel_pdf(path):
         received_on = extract_total_kwh(r"On\s*Pk\s*Delivered\s*by\s*Customer\s+(\d+)", full_bill_text)
         received_off = extract_total_kwh(r"Off\s*Pk\s*Delivered\s*by\s*Customer\s+([\d,]+)", full_bill_text)
         
-        # Use the function you already have at the top of the file!
-        mid_delivered = extract_total_kwh(r"RETOU\s+Mid-Peak\s+Usage\s+([\d\.,]+)", full_bill_text)
-        mid_received = extract_total_kwh(r"RETOU\s+Mid-Peak\s+Gen\s+([\d\.,]+)", full_bill_text)
+        # Updated 2025 Legacy Bridge: Handling squashed PDF text
+        # Matches "MidPkDeliveredbyXcel 28" or "MidPkDeliveredbyXcel: 28"
+        mid_del_pat = r"MidPkDeliveredbyXcel\s*([\d\.,]+)"
 
-        # Fold Mid-Peak into On-Peak for our 2-tier model
-        final_on_peak_delivered = delivered_on + mid_delivered
-        final_on_peak_received = received_on + mid_received
+        # Matches "MidPkDeliveredbyCustomer 34"
+        mid_rec_pat = r"MidPkDeliveredbyCustomer\s*([\d\.,]+)"
+
+        mid_del = extract_total_kwh(mid_del_pat, full_bill_text)
+        mid_rec = extract_total_kwh(mid_rec_pat, full_bill_text)
+
+        # Fold Mid-Peak Usage (Delivered) into On-Peak (Conservative Cost)
+        final_on_peak_delivered = delivered_on + mid_del
+
+        # Fold Mid-Peak Gen (Received) into Off-Peak (Conservative Credit)
+        final_off_peak_received = received_off + mid_rec
 
         # --- Page 2-4: Refined Rate Extraction ---
 
@@ -147,12 +167,19 @@ def parse_xcel_pdf(path):
             statement_date=statement_date, 
             service_start=start_dt,
             service_end=end_dt,
-            delivered_by_xcel=EnergyUsage(on_peak_kwh=final_on_peak_delivered, off_peak_kwh=delivered_off),
-            delivered_by_customer=EnergyUsage(on_peak_kwh=final_on_peak_received, off_peak_kwh=received_off),            total_electric_due=total_electric_due, # Use the extracted value
+            delivered_by_xcel=EnergyUsage(
+                on_peak_kwh=final_on_peak_delivered, 
+                off_peak_kwh=delivered_off
+            ),
+            delivered_by_customer=EnergyUsage(
+                on_peak_kwh=received_on, 
+                off_peak_kwh=final_off_peak_received
+            ),
             on_peak_rate=on_rate,
             off_peak_rate=off_rate,
             cepr_fs_rate=cepr_rate,
             cepr_fs_kwh=cepr_usage,
+            total_electric_due=total_electric_due,
             rollover_bank_balance=rollover_bank_balance
         )
 

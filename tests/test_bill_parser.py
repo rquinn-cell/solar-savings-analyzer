@@ -10,7 +10,7 @@ import os
 # This checks if the 'bills' folder exists
 BILLS_EXIST = os.path.exists("bills/")
 @pytest.mark.skipif(not BILLS_EXIST, reason="PDFs not available in this environment")
-def test_actual_pdf_parsing():
+def test_actual_pdf_parsing2026():
     path = "bills/XcelBill-2026-01-02.pdf"
     bill = parse_xcel_pdf(path)
 
@@ -26,6 +26,40 @@ def test_actual_pdf_parsing():
     assert bill.net_usage.on_peak_kwh == expected_net_on_peak
     assert bill.net_usage.off_peak_kwh == expected_net_off_peak
     assert bill.statement_date == date(2026, 1, 2)
+    assert bill.total_electric_due == expected_total_electric_due
+
+@pytest.mark.skipif(not BILLS_EXIST, reason="PDFs not available in this environment")
+def test_actual_pdf_parsing2025():
+    path = "bills/XcelBill-2025-12-02.pdf"
+    bill = parse_xcel_pdf(path)
+
+    # Expected Data from Page 1 & 2 of your PDF
+    expected_on_peak_delivered_by_xcel_total = Decimal("70.0")
+    expected_off_peak_delivered_by_xcel_total = Decimal("836.0")
+    expected_received_on_peak_total = Decimal("4.0")
+    expected_received_off_peak_total = Decimal("377.0")
+    expected_net_on_peak = Decimal("66.0")
+    expected_net_off_peak = Decimal("459.0")
+    expected_total_electric_due = Decimal("90.93") # Combined Electric
+    expected_bank_dollar_balance = Decimal("0.00") # No bank balance reported on this bill
+
+    assert bill.delivered_by_xcel.total_kwh == expected_on_peak_delivered_by_xcel_total + expected_off_peak_delivered_by_xcel_total
+    assert bill.delivered_by_customer.total_kwh == expected_received_on_peak_total + expected_received_off_peak_total
+    assert bill.net_usage.on_peak_kwh == expected_net_on_peak
+    assert bill.net_usage.off_peak_kwh == expected_net_off_peak
+    assert bill.statement_date == date(2025, 12, 2)
+    assert bill.total_electric_due == expected_total_electric_due
+    assert bill.rollover_bank_balance == expected_bank_dollar_balance
+
+# put in test for 2026-04-02.pdf tp verify the bank balance parsing as well
+@pytest.mark.skipif(not BILLS_EXIST, reason="PDFs not available in this environment")
+def test_bank_balance_parsing():
+    path = "bills/XcelBill-2026-04-02.pdf"
+    bill = parse_xcel_pdf(path)
+
+    expected_bank_dollar_balance = Decimal("24.19") # Example value, replace with actual from the bill
+    expected_total_electric_due = Decimal("-15.72") # Example value, replace with actual from the bill
+    assert bill.rollover_bank_balance == expected_bank_dollar_balance
     assert bill.total_electric_due == expected_total_electric_due
 
 def test_savings_calculation_logic():

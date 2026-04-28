@@ -37,6 +37,7 @@ def test_scrubbed_data_integrity_and_calculator():
             off_peak_kwh=Decimal(str(entry["usage_received"]["off_peak"]))
         ),
         total_electric_due=Decimal(str(entry["financials"]["total_due"])),
+        rollover_bank_balance=Decimal(str(entry["financials"]["bank_dollar_balance"])),
         on_peak_rate=Decimal(str(entry["rates"]["on_peak"])),
         off_peak_rate=Decimal(str(entry["rates"]["off_peak"])),
         cepr_fs_rate=Decimal(str(entry["rates"]["cepr_fs"])),

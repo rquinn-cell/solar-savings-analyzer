@@ -101,4 +101,4 @@ class SolarSavingsCalculator:
         #eff_on = self.RATE_ON_PEAK + self.RATE_CEPR_FS
         #eff_off = self.RATE_OFF_PEAK + self.RATE_CEPR_FS
         
-        return (usage_on * eff_on) + (usage_off * eff_off)
+        #return (usage_on * eff_on) + (usage_off * eff_off)

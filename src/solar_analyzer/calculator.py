@@ -43,38 +43,54 @@ class SolarSavingsCalculator:
         """
         return self.calculate_shadow_cost() - self.bill.total_electric_due
 
-    def calculate_new_bank_state(self, starting_bank: SolarBankState) -> SolarBankState:
+    def get_monthly_roi_data(self):
         """
-        Standard non-negative kWh banking logic.
+        Returns a dictionary for easy consumption by the Streamlit visualizer.
         """
-        net_on_peak = self.bill.delivered_by_customer.on_peak_kwh - self.bill.delivered_by_xcel.on_peak_kwh
-        net_off_peak = self.bill.delivered_by_customer.off_peak_kwh - self.bill.delivered_by_xcel.off_peak_kwh
+        shadow = self.calculate_shadow_cost()
+        actual = self.bill.total_electric_due
+        savings = shadow - actual
         
-        new_on_peak = max(Decimal("0.00"), starting_bank.on_peak_kwh + net_on_peak)
-        new_off_peak = max(Decimal("0.00"), starting_bank.off_peak_kwh + net_off_peak)
-        
-        return SolarBankState(on_peak_kwh=new_on_peak, off_peak_kwh=new_off_peak)
-    
-    def calculate_excess_value(self, excess_kwh: Decimal, rate: Decimal) -> Decimal:
-        # Xcel also credits the variable riders (ECA, PCCA, etc.) 
-        # Usually this is effectively the (Total Rate * Excess kWh)
-        return excess_kwh * rate
+        return {
+            "shadow_bill": float(shadow),
+            "actual_bill": float(actual),
+            "monthly_savings": float(savings),
+            "bank_balance": float(self.bill.rollover_bank_balance)
+        }
 
-    def calculate_billed_kwh(self, starting_bank: SolarBankState) -> EnergyUsage:
-        """
-        Calculates the kWh you are actually charged for after draining the bank.
-        """
-        # Usage that wasn't covered by current production
-        net_needed_on = self.bill.delivered_by_xcel.on_peak_kwh - self.bill.delivered_by_customer.on_peak_kwh
-        net_needed_off = self.bill.delivered_by_xcel.off_peak_kwh - self.bill.delivered_by_customer.off_peak_kwh
+# Turning off bank logic for now to simplify the calculator and focus on core savings estimation.
+    # def calculate_new_bank_state(self, starting_bank: SolarBankState) -> SolarBankState:
+    #     """
+    #     Standard non-negative kWh banking logic.
+    #     """
+    #     net_on_peak = self.bill.delivered_by_customer.on_peak_kwh - self.bill.delivered_by_xcel.on_peak_kwh
+    #     net_off_peak = self.bill.delivered_by_customer.off_peak_kwh - self.bill.delivered_by_xcel.off_peak_kwh
         
-        # Subtract what we can from the bank
-        billed_on = max(Decimal("0.00"), net_needed_on - starting_bank.on_peak_kwh)
-        billed_off = max(Decimal("0.00"), net_needed_off - starting_bank.off_peak_kwh)
+    #     new_on_peak = max(Decimal("0.00"), starting_bank.on_peak_kwh + net_on_peak)
+    #     new_off_peak = max(Decimal("0.00"), starting_bank.off_peak_kwh + net_off_peak)
         
-        return EnergyUsage(on_peak_kwh=billed_on, off_peak_kwh=billed_off)
+    #     return SolarBankState(on_peak_kwh=new_on_peak, off_peak_kwh=new_off_peak)
     
-    def _calculate_variable_costs(self, usage_on: Decimal, usage_off: Decimal) -> Decimal:
+    # def calculate_excess_value(self, excess_kwh: Decimal, rate: Decimal) -> Decimal:
+    #     # Xcel also credits the variable riders (ECA, PCCA, etc.) 
+    #     # Usually this is effectively the (Total Rate * Excess kWh)
+    #     return excess_kwh * rate
+
+    # def calculate_billed_kwh(self, starting_bank: SolarBankState) -> EnergyUsage:
+    #     """
+    #     Calculates the kWh you are actually charged for after draining the bank.
+    #     """
+    #     # Usage that wasn't covered by current production
+    #     net_needed_on = self.bill.delivered_by_xcel.on_peak_kwh - self.bill.delivered_by_customer.on_peak_kwh
+    #     net_needed_off = self.bill.delivered_by_xcel.off_peak_kwh - self.bill.delivered_by_customer.off_peak_kwh
+        
+    #     # Subtract what we can from the bank
+    #     billed_on = max(Decimal("0.00"), net_needed_on - starting_bank.on_peak_kwh)
+    #     billed_off = max(Decimal("0.00"), net_needed_off - starting_bank.off_peak_kwh)
+        
+    #     return EnergyUsage(on_peak_kwh=billed_on, off_peak_kwh=billed_off)
+    
+    # def _calculate_variable_costs(self, usage_on: Decimal, usage_off: Decimal) -> Decimal:
         """
 
                 Helper to apply effective rates to kWh.

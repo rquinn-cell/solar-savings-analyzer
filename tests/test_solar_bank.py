@@ -2,7 +2,31 @@ from decimal import Decimal
 from datetime import date
 from solar_analyzer.models import XcelSolarBill, EnergyUsage, SolarBankState
 from solar_analyzer.calculator import SolarSavingsCalculator
+import pytest
 
+def test_calculator_pulls_dollar_bank():
+    # Setup a mock bill with a $24.19 bank
+    mock_bill = XcelSolarBill(
+        statement_date="2026-04-01",
+        account_number="53-0012756531-8",
+        service_start=date(2026, 3, 1),
+        service_end=date(2026, 3, 31),
+        delivered_by_xcel=EnergyUsage(on_peak_kwh=Decimal("100"), off_peak_kwh=Decimal("200")),
+        delivered_by_customer=EnergyUsage(on_peak_kwh=Decimal("300"), off_peak_kwh=Decimal("500")),
+        total_electric_due=Decimal("15.00"), # Just fixed fees
+        on_peak_rate=Decimal("0.183310"),
+        off_peak_rate=Decimal("0.067920"),
+        cepr_fs_rate=Decimal("0.012500"),
+        cepr_fs_kwh=Decimal("125.33"), # Add a dummy value        
+        rollover_bank_balance=Decimal("24.19")
+        # ... other fields
+    )
+    calc = SolarSavingsCalculator(mock_bill)
+    data = calc.get_monthly_roi_data()
+    
+    assert data['bank_balance'] == 24.19 
+    
+@pytest.mark.skip(reason="Deprecating kWh-based banking in favor of 2026 dollar-denominated banking.")
 def test_summer_surplus_banking():
     # Simulate a high-production month
     # House uses 300 total, Solar produces 800 total
@@ -33,6 +57,7 @@ def test_summer_surplus_banking():
     assert new_bank.on_peak_kwh == Decimal("200")
     assert new_bank.off_peak_kwh == Decimal("300")
 
+@pytest.mark.skip(reason="Deprecating kWh-based banking in favor of 2026 dollar-denominated banking.")
 def test_bank_drain_logic():
     # Simulate a cloudy month where we drain a pre-existing bank
     cloudy_bill = XcelSolarBill(

@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from src.solar_analyzer.parser import parse_xcel_pdf
 from src.solar_analyzer.calculator import SolarSavingsCalculator
+from src.solar_analyzer.database import log_analytics_event
 import tempfile
 import os
 
@@ -11,6 +12,16 @@ st.set_page_config(page_title="Solar ROI Dashboard", layout="wide")
 
 st.title("☀️ Xcel Solar ROI Analyzer")
 st.markdown("Upload your Xcel PDFs to calculate true savings and monitor your Solar Bank.")
+
+# 0. Analytics Heartbeat 
+# We use session_state to ensure we only log ONCE per browser session
+if 'analytics_logged' not in st.session_state:
+    try:
+        log_analytics_event("app_load")
+        st.session_state.analytics_logged = True
+        st.toast("Database Connected: Heartbeat Sent!") # Visual confirmation
+    except Exception as e:
+        st.error(f"Database Connection Failed: {e}")
 
 # 1. Sidebar Configuration
 with st.sidebar:
@@ -79,7 +90,7 @@ if uploaded_files:
         m4.metric("ROI Progress", f"{(total_saved / system_cost) * 100:.1f}%")
 
         # 4. Visualization Tabs
-        tab1, tab2, tab3 = st.tabs(["Savings Growth", "Energy Balance", "Financial Data"])
+        tab1, tab2, tab3, tab4 = st.tabs(["Savings Growth", "Energy Balance", "Financial Data", "About & Legal"])
 
         from plotly.subplots import make_subplots
 
@@ -186,6 +197,41 @@ if uploaded_files:
                 display_df = df
             
             st.dataframe(display_df, use_container_width=True)
+
+        with tab4:
+            st.header("Project Information")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("🛠 Open Source")
+                st.markdown("""
+                This tool is open-source and built for the community.
+                
+                **GitHub:** [Source Code & Contributions](https://github.com/rquinn-cell/solar-savings-analyzer)  
+                **License:** MIT License
+                """)
+                
+            with col2:
+                st.subheader("📈 Usage & Privacy")
+                st.write("We track aggregate usage (number of bills parsed) to improve the tool.")
+                st.write("Stateful accounts use **Scrubbed Storage**, meaning your name and address never leave your browser.")
+
+            st.divider()
+            st.subheader("Disclaimer")
+            st.caption("""
+            Estimates are based on extracted PDF data. Xcel Energy's billing cycles and rate 
+            structures are complex; this tool should be used for personal estimation only. 
+            Not affiliated with Xcel Energy.
+            """)
+            
+            st.subheader("Legal Agreement")
+            with st.expander("View Full License and Terms"):
+                st.text("""
+                Copyright (c) 2026 Richard Quinn
+                
+                Permission is hereby granted, free of charge, to any person obtaining a copy
+                of this software and associated documentation files... (MIT License Text)
+                """)
 
 else:
     st.info("👈 Upload your Xcel Energy PDF bills in the sidebar to begin.")

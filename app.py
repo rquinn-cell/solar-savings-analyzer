@@ -60,6 +60,7 @@ if uploaded_files:
                     'Actual_Bill': roi_stats['actual_bill'],
                     'Shadow_Bill': roi_stats['shadow_bill'],
                     'Monthly_Savings': roi_stats['monthly_savings'],
+                    'Monthly_Bank_Contrib': roi_stats['monthly_bank_contrib'],
                     'Bank_Balance': roi_stats['bank_balance'],
                     'Usage_On_Peak': float(bill_data.delivered_by_xcel.on_peak_kwh),
                     'Usage_Off_Peak': float(bill_data.delivered_by_xcel.off_peak_kwh),
@@ -171,6 +172,8 @@ if uploaded_files:
             st.plotly_chart(fig_savings, use_container_width=True)
 
         with tab2:
+            # --- PLOT 1: Net Energy Flow (kWh) ---
+            st.subheader("Energy Flow")
             fig_eng = go.Figure()
             fig_eng.add_trace(go.Bar(
                 x=df['Date'], 
@@ -185,9 +188,61 @@ if uploaded_files:
             fig_eng.update_layout(
                 title="Net Energy Flow (kWh)",
                 barmode='relative',
-                template="plotly_white"
+                template="plotly_white",
+                xaxis_title="Billing Cycle",
+                yaxis_title="kWh",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             st.plotly_chart(fig_eng, use_container_width=True)
+
+            st.divider() # Visual separator between energy and money
+
+            # --- PLOT 2: Solar Bank Balance ($) ---
+            st.subheader("Solar Bank Growth")
+            
+            # Data Prep: Calculate the previous balance to create a stacked effect
+            chart_df = df.copy().sort_values("Date")
+            # We subtract the monthly add from the balance to find what was carried over
+            chart_df['Carryover_Balance'] = chart_df['Bank_Balance'] - chart_df['Monthly_Bank_Contrib']
+
+            fig_bank = go.Figure()
+
+            # Add the Carryover (Base)
+            fig_bank.add_trace(go.Bar(
+                x=chart_df['Date'],
+                y=chart_df['Carryover_Balance'],
+                name="Previous Balance",
+                marker_color='#1f77b4', # Blue
+                opacity=0.7
+            ))
+
+            # Add the New Monthly Addition
+            fig_bank.add_trace(go.Bar(
+                x=chart_df['Date'],
+                y=chart_df['Monthly_Bank_Contrib'],
+                name="New Monthly Credit",
+                marker_color='#FFA15A', # Solar Orange
+            ))
+
+            fig_bank.update_layout(
+                title="Cumulative Solar Bank Balance ($)",
+                barmode='stack',
+                template="plotly_white",
+                xaxis_title="Billing Cycle",
+                yaxis_title="USD ($)",
+                hovermode="x unified",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_bank, use_container_width=True)
+            
+            # Optional: Add a dynamic summary note
+            current_bank = chart_df['Bank_Balance'].iloc[-1]
+            last_add = chart_df['Monthly_Bank_Contrib'].iloc[-1]
+
+            # Replace st.info with a clean metric row
+            col1, col2 = st.columns(2)
+            col1.metric("Total Bank Balance", f"${current_bank:,.2f}", delta=f"${last_add:,.2f}")
+            col2.metric("Monthly Contribution", f"${last_add:,.2f}")
 
         with tab3:
             if privacy_mode:

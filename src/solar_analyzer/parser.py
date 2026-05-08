@@ -80,12 +80,13 @@ def parse_xcel_pdf(path):
         start_dt = parse_date(dates_match.group(1)) if dates_match else None
         end_dt = parse_date(dates_match.group(2)) if dates_match else None
 
-        # 5. Bank Balance (The April Bill "No Decimal" Fix)
+        # 5a. Monthly Bank Contribution (The April Bill "No Decimal" Fix)
         # Matches "Other Recurring Charges" then looks for digits/spaces
+        # this is actually matching the monthly contribution line
         bank_pat = r"Other\s*Recurring\s*Charges[\s\S]*?\$?\s*([\d\s\.,]{2,7})"
         bank_match = re.search(bank_pat, page_1_text)
         
-        rollover_bank_balance = Decimal("0.00")
+        monthly_bank_contribution = Decimal("0.00")
         if bank_match:
             raw_val = bank_match.group(1).strip()
             # If we see "24 19" (space instead of dot), fix it
@@ -95,7 +96,7 @@ def parse_xcel_pdf(path):
             # Clean up commas and remaining spaces
             clean_val = raw_val.replace(',', '').replace(' ', '')
             if clean_val:
-                rollover_bank_balance = Decimal(clean_val)
+                monthly_bank_contribution = Decimal(clean_val)
 
         ## --- Page 2: Meter Data ---
         #page_2_text = pdf.pages[1].extract_text()
@@ -113,6 +114,24 @@ def parse_xcel_pdf(path):
         #             "The current calculator only supports the 2-tier (On-Peak/Off-Peak) "
         #             "RE-TOU structure introduced in late 2025."
         #         )
+
+        # 5b. Total Bank Balance (The April Bill "No Decimal" Fix)
+        # Matches "Other Recurring Charges" then looks for digits/spaces
+        # this is actually matching the monthly contribution line
+        bank_pat = r"Rollover\s*Bank\s*Dollar\s*Credit[\s\S]*?\$?\s*([\d\s\.,]{2,7})"
+        bank_match = re.search(bank_pat, full_bill_text)
+        
+        rollover_bank_balance = Decimal("0.00")
+        if bank_match:
+            raw_val = bank_match.group(1).strip()
+            # If we see "24 19" (space instead of dot), fix it
+            if " " in raw_val and "." not in raw_val:
+                raw_val = raw_val.replace(" ", ".")
+            
+            # Clean up commas and remaining spaces
+            clean_val = raw_val.replace(',', '').replace(' ', '')
+            if clean_val:
+                rollover_bank_balance = Decimal(clean_val)
 
         delivered_on = extract_total_kwh(r"On\s*Peak\s*Delivered\s*by\s*Xcel\s+(\d+)", full_bill_text)
         delivered_off = extract_total_kwh(r"Off\s*Peak\s*Delivered\s*by\s*Xcel\s+([\d,]+)", full_bill_text)
@@ -180,6 +199,7 @@ def parse_xcel_pdf(path):
             cepr_fs_rate=cepr_rate,
             cepr_fs_kwh=cepr_usage,
             total_electric_due=total_electric_due,
+            monthly_bank_contribution=monthly_bank_contribution,
             rollover_bank_balance=rollover_bank_balance
         )
 

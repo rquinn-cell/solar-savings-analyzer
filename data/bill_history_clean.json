@@ -21,6 +21,7 @@
         "cepr_usage": 0.0,
         "financials": {
             "total_due": 162.0,
+            "monthly_bank_contrib": 0.0,
             "bank_dollar_balance": 0.0
         }
     },
@@ -46,6 +47,7 @@
         "cepr_usage": 150.98,
         "financials": {
             "total_due": 90.93,
+            "monthly_bank_contrib": 0.0,
             "bank_dollar_balance": 0.0
         }
     },
@@ -71,6 +73,7 @@
         "cepr_usage": 119.47,
         "financials": {
             "total_due": 155.67,
+            "monthly_bank_contrib": 0.0,
             "bank_dollar_balance": 0.0
         }
     },
@@ -96,6 +99,7 @@
         "cepr_usage": 125.33,
         "financials": {
             "total_due": 107.1,
+            "monthly_bank_contrib": 0.0,
             "bank_dollar_balance": 0.0
         }
     },
@@ -121,6 +125,7 @@
         "cepr_usage": 126.64,
         "financials": {
             "total_due": 34.65,
+            "monthly_bank_contrib": 0.0,
             "bank_dollar_balance": 0.0
         }
     },
@@ -146,7 +151,34 @@
         "cepr_usage": 126.8,
         "financials": {
             "total_due": -15.72,
+            "monthly_bank_contrib": 24.19,
             "bank_dollar_balance": 24.19
+        }
+    },
+    {
+        "statement_date": "2026-05-04",
+        "service_period": {
+            "start": "2026-03-29",
+            "end": "2026-04-27"
+        },
+        "usage_delivered": {
+            "on_peak": 37.0,
+            "off_peak": 595.0
+        },
+        "usage_received": {
+            "on_peak": 11.0,
+            "off_peak": 838.0
+        },
+        "rates": {
+            "on_peak": 0.18331,
+            "off_peak": 0.06792,
+            "cepr_fs": 0.0125
+        },
+        "cepr_usage": 123.16,
+        "financials": {
+            "total_due": -8.96,
+            "monthly_bank_contrib": 17.48,
+            "bank_dollar_balance": 41.67
         }
     }
 ]

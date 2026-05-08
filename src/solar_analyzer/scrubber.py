@@ -35,6 +35,7 @@ class BillScrubber:
             "financials": {
                 "total_due": float(bill.total_electric_due),
                 # NEW: Track the reported solar bank state
+                "monthly_bank_contrib": float(bill.monthly_bank_contribution),
                 "bank_dollar_balance": float(bill.rollover_bank_balance)
             }
         }

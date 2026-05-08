@@ -55,6 +55,7 @@ class SolarSavingsCalculator:
             "shadow_bill": float(shadow),
             "actual_bill": float(actual),
             "monthly_savings": float(savings),
+            "monthly_bank_contrib": float(self.bill.monthly_bank_contribution),
             "bank_balance": float(self.bill.rollover_bank_balance)
         }
 

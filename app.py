@@ -3,83 +3,177 @@ import pandas as pd
 import plotly.graph_objects as go
 from src.solar_analyzer.parser import parse_xcel_pdf
 from src.solar_analyzer.calculator import SolarSavingsCalculator
-from src.solar_analyzer.database import log_analytics_event
+# Added fetch_user_history and fetch_system_cost here:
+from src.solar_analyzer.database import (
+    log_analytics_event, 
+    save_bills_to_history, 
+    fetch_user_history, 
+    fetch_system_cost,
+    update_system_cost
+)
 import tempfile
 import os
+from src.solar_analyzer.auth import get_authenticator
 
-# Page Config
+# Set page config must be at the very top before any other Streamlit calls
 st.set_page_config(page_title="Solar ROI Dashboard", layout="wide")
 
-st.title("☀️ Xcel Solar ROI Analyzer")
-st.markdown("Upload your Xcel PDFs to calculate true savings and monitor your Solar Bank.")
+authenticator = get_authenticator()
+authenticator.login(location='main')
 
-# 0. Analytics Heartbeat 
-# We use session_state to ensure we only log ONCE per browser session
-if 'analytics_logged' not in st.session_state:
-    try:
-        log_analytics_event("app_load")
-        st.session_state.analytics_logged = True
-        st.toast("Database Connected: Heartbeat Sent!") # Visual confirmation
-    except Exception as e:
-        st.error(f"Database Connection Failed: {e}")
-
-# 1. Sidebar Configuration
-with st.sidebar:
-    st.header("Settings")
-    uploaded_files = st.file_uploader(
-        "Upload Xcel Bills (PDF)", 
-        type="pdf", 
-        accept_multiple_files=True
-    )
+if st.session_state["authentication_status"] == False:
+    st.error('Username/password is incorrect')
+elif st.session_state["authentication_status"] == None:
+    st.warning('Please enter your username and password')
+elif st.session_state["authentication_status"]:
+    # --- AUTHENTICATED AREA ---
+    name = st.session_state["name"]
+    username = st.session_state["username"]
+    USER_UUID = "59a513cd-1a19-4f5a-bd9d-ca76241bcd35" 
     
-    system_cost = st.number_input("Total System Cost ($)", value=15000, step=500)
-    
-    st.divider()
-    privacy_mode = st.toggle("Privacy Mode", value=False, help="Redact metadata in the table view.")
-    
-    st.info("Files are processed in-memory and never stored.")
-
-# 2. Processing Logic
-if uploaded_files:
-    all_rows = []
-    
-    with st.spinner(f"Analyzing {len(uploaded_files)} bills..."):
-        for uploaded_file in uploaded_files:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(uploaded_file.getvalue())
-                tmp_path = tmp.name
-            
-            try:
-                bill_data = parse_xcel_pdf(tmp_path)
-                # Calculator provides the Shadow Bill and Monthly Savings
-                calc = SolarSavingsCalculator(bill_data)
-                roi_stats = calc.get_monthly_roi_data()
-                
-                all_rows.append({
-                    'Date': bill_data.statement_date,
-                    'Actual_Bill': roi_stats['actual_bill'],
-                    'Shadow_Bill': roi_stats['shadow_bill'],
-                    'Monthly_Savings': roi_stats['monthly_savings'],
-                    'Monthly_Bank_Contrib': roi_stats['monthly_bank_contrib'],
-                    'Bank_Balance': roi_stats['bank_balance'],
-                    'Usage_On_Peak': float(bill_data.delivered_by_xcel.on_peak_kwh),
-                    'Usage_Off_Peak': float(bill_data.delivered_by_xcel.off_peak_kwh),
-                    'Gen_On_Peak': float(bill_data.delivered_by_customer.on_peak_kwh),
-                    'Gen_Off_Peak': float(bill_data.delivered_by_customer.off_peak_kwh)
-                })
-            except Exception as e:
-                st.error(f"Error parsing {uploaded_file.name}: {e}")
-            finally:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-
-    if all_rows:
-        df = pd.DataFrame(all_rows).sort_values('Date')
+    with st.sidebar:
+        st.write(f"Welcome, **{name}**")
+        authenticator.logout(button_name='Logout', location='sidebar')
+        st.divider()
         
-        # Ensure column name matches the key used in all_rows
+        st.header("Settings")
+        # Feature 1: Stateless vs. Stateful Toggle
+        save_state = st.checkbox("Enable Cloud Sync (Stateful)", value=True, 
+                                 help="Automatically loads your history and saves new uploads securely.")
+        
+        uploaded_files = st.file_uploader(
+            "Upload Xcel Bills (PDF)", 
+            type="pdf", 
+            accept_multiple_files=True
+        )
+        
+        # Feature 2: Smart System Cost (Cloud-prefilled if stateful)
+        default_cost = 15000
+        if save_state:
+            try:
+                if 'system_cost_cloud' not in st.session_state:
+                    st.session_state.system_cost_cloud = fetch_system_cost(USER_UUID) or 15000
+                default_cost = st.session_state.system_cost_cloud
+            except Exception:
+                pass
+                
+        system_cost = st.number_input("Total System Cost ($)", value=int(default_cost), step=500)
+        
+        # Save system cost back to cloud if it changes
+        if save_state and system_cost != default_cost:
+            try:
+                update_system_cost(USER_UUID, system_cost)
+                st.session_state.system_cost_cloud = system_cost
+            except Exception:
+                pass
+
+        st.divider()
+        privacy_mode = st.toggle("Privacy Mode", value=False, help="Redact metadata in the table view.")
+
+    # Main Page Layout Headers
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.title("☀️ Xcel Solar ROI Analyzer")
+        st.markdown("Calculate true savings, manage infrastructure ROI, and monitor your Solar Bank.")
+    with col2:
+        # Move Sync Button to Top Header for manual control/visual status
+        if save_state:
+            st.write("") # padding
+            if st.button("🔄 Force Cloud Sync"):
+                st.cache_data.clear()
+                st.rerun()
+
+    # Analytics Heartbeat
+    if 'analytics_logged' not in st.session_state:
+        try:
+            log_analytics_event("app_load")
+            st.session_state.analytics_logged = True
+            st.toast("Database Connected: Heartbeat Sent!")
+        except Exception as e:
+            st.error(f"Database Connection Failed: {e}")
+
+    # --- UNIFIED DATA EXTRACTION STREAM ---
+    processed_bills = []
+    known_dates = set()
+
+    # Stream 1: Gather Cloud Data first (if opted-in)
+    if save_state:
+        try:
+            cloud_records = fetch_user_history(USER_UUID)
+            for record in cloud_records:
+                # Map database snake_case names directly back to internal pandas names
+                bill_dt = pd.to_datetime(record['statement_date']).date()
+                processed_bills.append({
+                    'Date': bill_dt,
+                    'Actual_Bill': float(record['actual_bill']),
+                    'Shadow_Bill': float(record['shadow_bill']),
+                    'Monthly_Savings': float(record['monthly_savings']),
+                    'Monthly_Bank_Contrib': float(record['monthly_bank_contrib']),
+                    'Bank_Balance': float(record['bank_balance']),
+                    'Usage_On_Peak': float(record['usage_on_peak']),
+                    'Usage_Off_Peak': float(record['usage_off_peak']),
+                    'Gen_On_Peak': float(record['gen_on_peak']),
+                    'Gen_Off_Peak': float(record['gen_off_peak'])
+                })
+                known_dates.add(bill_dt)
+        except Exception as e:
+            st.sidebar.error(f"Failed to load cloud history: {e}")
+
+    # Stream 2: Gather PDF Upload Data
+    if uploaded_files:
+        new_bills_to_sync = []
+        with st.spinner(f"Analyzing {len(uploaded_files)} bills..."):
+            for uploaded_file in uploaded_files:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(uploaded_file.getvalue())
+                    tmp_path = tmp.name
+                
+                try:
+                    bill_data = parse_xcel_pdf(tmp_path)
+                    bill_dt = bill_data.statement_date
+                    
+                    # Deduplicate: Skip file processing if this date is already loaded via cloud
+                    if bill_dt in known_dates:
+                        continue
+                        
+                    calc = SolarSavingsCalculator(bill_data)
+                    roi_stats = calc.get_monthly_roi_data()
+                    
+                    payload = {
+                        'Date': bill_dt,
+                        'Actual_Bill': roi_stats['actual_bill'],
+                        'Shadow_Bill': roi_stats['shadow_bill'],
+                        'Monthly_Savings': roi_stats['monthly_savings'],
+                        'Monthly_Bank_Contrib': roi_stats['monthly_bank_contrib'],
+                        'Bank_Balance': roi_stats['bank_balance'],
+                        'Usage_On_Peak': float(bill_data.delivered_by_xcel.on_peak_kwh),
+                        'Usage_Off_Peak': float(bill_data.delivered_by_xcel.off_peak_kwh),
+                        'Gen_On_Peak': float(bill_data.delivered_by_customer.on_peak_kwh),
+                        'Gen_Off_Peak': float(bill_data.delivered_by_customer.off_peak_kwh)
+                    }
+                    processed_bills.append(payload)
+                    known_dates.add(bill_dt)
+                    new_bills_to_sync.append(payload)
+                    
+                except Exception as e:
+                    st.error(f"Error parsing {uploaded_file.name}: {e}")
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+                        
+        # Feature 3: Auto-Save newly uploaded files if stateful
+        if save_state and new_bills_to_sync:
+            try:
+                save_bills_to_history(USER_UUID, new_bills_to_sync)
+                st.toast(f"🔥 Auto-Saved {len(new_bills_to_sync)} new bills to Cloud!")
+            except Exception as e:
+                st.error(f"Auto-save failed: {e}")
+
+    # --- RENDERING PIPELINE (Runs smoothly regardless of data origin) ---
+    if processed_bills:
+        df = pd.DataFrame(processed_bills).sort_values('Date')
         df['Cumulative_Savings'] = df['Monthly_Savings'].cumsum()
         
-        # 3. Top-Level Metrics
         current_bank = df['Bank_Balance'].iloc[-1]
         total_saved = df['Monthly_Savings'].sum()
         total_paid = df['Actual_Bill'].sum()
@@ -169,7 +263,7 @@ if uploaded_files:
                 row=2, col=1
             )
 
-            st.plotly_chart(fig_savings, use_container_width=True)
+            st.plotly_chart(fig_savings, width="stretch")
 
         with tab2:
             # --- PLOT 1: Net Energy Flow (kWh) ---
@@ -193,37 +287,31 @@ if uploaded_files:
                 yaxis_title="kWh",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            st.plotly_chart(fig_eng, use_container_width=True)
+            st.plotly_chart(fig_eng, width="stretch")
 
-            st.divider() # Visual separator between energy and money
+            st.divider()
 
             # --- PLOT 2: Solar Bank Balance ($) ---
             st.subheader("Solar Bank Growth")
             
-            # Data Prep: Calculate the previous balance to create a stacked effect
             chart_df = df.copy().sort_values("Date")
-            # We subtract the monthly add from the balance to find what was carried over
+            # Linked securely to our updated internal dict key 'Monthly_Bank_Contrib'
             chart_df['Carryover_Balance'] = chart_df['Bank_Balance'] - chart_df['Monthly_Bank_Contrib']
 
             fig_bank = go.Figure()
-
-            # Add the Carryover (Base)
             fig_bank.add_trace(go.Bar(
                 x=chart_df['Date'],
                 y=chart_df['Carryover_Balance'],
                 name="Previous Balance",
-                marker_color='#1f77b4', # Blue
+                marker_color='#1f77b4',
                 opacity=0.7
             ))
-
-            # Add the New Monthly Addition
             fig_bank.add_trace(go.Bar(
                 x=chart_df['Date'],
                 y=chart_df['Monthly_Bank_Contrib'],
                 name="New Monthly Credit",
-                marker_color='#FFA15A', # Solar Orange
+                marker_color='#FFA15A',
             ))
-
             fig_bank.update_layout(
                 title="Cumulative Solar Bank Balance ($)",
                 barmode='stack',
@@ -233,16 +321,7 @@ if uploaded_files:
                 hovermode="x unified",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            st.plotly_chart(fig_bank, use_container_width=True)
-            
-            # Optional: Add a dynamic summary note
-            current_bank = chart_df['Bank_Balance'].iloc[-1]
-            last_add = chart_df['Monthly_Bank_Contrib'].iloc[-1]
-
-            # Replace st.info with a clean metric row
-            col1, col2 = st.columns(2)
-            col1.metric("Total Bank Balance", f"${current_bank:,.2f}", delta=f"${last_add:,.2f}")
-            col2.metric("Monthly Contribution", f"${last_add:,.2f}")
+            st.plotly_chart(fig_bank, width="stretch")
 
         with tab3:
             if privacy_mode:
@@ -251,42 +330,32 @@ if uploaded_files:
             else:
                 display_df = df
             
-            st.dataframe(display_df, use_container_width=True)
+            st.dataframe(display_df, width="stretch")
+            st.divider()
+            
+            if save_state:
+                st.caption(f"🔒 Account status: Connected. Real-time encryption active for User UID: {USER_UUID}")
+            else:
+                st.caption("🔒 Account status: Stateless. No cloud connection active.")
 
         with tab4:
-            st.header("Project Information")
-            
             col1, col2 = st.columns(2)
             with col1:
-                st.subheader("🛠 Open Source")
-                st.markdown("""
-                This tool is open-source and built for the community.
-                
-                **GitHub:** [Source Code & Contributions](https://github.com/rquinn-cell/solar-savings-analyzer)  
-                **License:** MIT License
+                st.subheader("☀️ About the Tool")
+                st.write("""
+                The Xcel Solar ROI Analyzer parses the specific layouts of residential electric bills 
+                to separate baseline operational costs from true net metering production. It helps 
+                homeowners validate their solar setup's actual ROI.
                 """)
+                st.markdown("**GitHub:** [Source Code & Contributions](https://github.com/rquinn-cell/solar-savings-analyzer)")
+                st.markdown("**License:** MIT License")
                 
             with col2:
                 st.subheader("📈 Usage & Privacy")
-                st.write("We track aggregate usage (number of bills parsed) to improve the tool.")
-                st.write("Stateful accounts use **Scrubbed Storage**, meaning your name and address never leave your browser.")
+                st.write("Stateful accounts use **Scrubbed Storage**, meaning your name and address never leave your browser context.")
 
             st.divider()
             st.subheader("Disclaimer")
-            st.caption("""
-            Estimates are based on extracted PDF data. Xcel Energy's billing cycles and rate 
-            structures are complex; this tool should be used for personal estimation only. 
-            Not affiliated with Xcel Energy.
-            """)
-            
-            st.subheader("Legal Agreement")
-            with st.expander("View Full License and Terms"):
-                st.text("""
-                Copyright (c) 2026 Richard Quinn
-                
-                Permission is hereby granted, free of charge, to any person obtaining a copy
-                of this software and associated documentation files... (MIT License Text)
-                """)
-
-else:
-    st.info("👈 Upload your Xcel Energy PDF bills in the sidebar to begin.")
+            st.caption("Estimates are based on extracted PDF data. Not affiliated with Xcel Energy.")
+    else:
+        st.info("👈 Upload your Xcel Energy PDF bills in the sidebar, or enable Cloud Sync to populate your dashboard.")

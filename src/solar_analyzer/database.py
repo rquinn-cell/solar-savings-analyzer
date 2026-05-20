@@ -31,8 +31,8 @@ def save_bills_to_history(user_id, bill_lists):
             "monthly_savings": bill_row['Monthly_Savings'],
             "monthly_bank_contrib": bill_row['Monthly_Bank_Contrib'],
             "bank_balance": bill_row['Bank_Balance'],
-            "on_peak_rate": bill_row.get('On_Rate'),
-            "off_peak_rate": bill_row.get('Off_Rate')
+            "on_peak_rate": bill_row.get('On_Peak_Rate'),
+            "off_peak_rate": bill_row.get('Off_Peak_Rate')
         })
     
     # Upsert: If (user_id, statement_date) exists, update. Otherwise, insert.

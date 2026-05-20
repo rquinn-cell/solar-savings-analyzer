@@ -13,34 +13,45 @@ from src.solar_analyzer.database import (
 )
 import tempfile
 import os
-from src.solar_analyzer.auth import get_authenticator
+from src.solar_analyzer.auth import render_login_gate, logout_user
 
 # Set page config must be at the very top before any other Streamlit calls
 st.set_page_config(page_title="Solar ROI Dashboard", layout="wide")
 
-authenticator = get_authenticator()
-authenticator.login(location='main')
+# Render our new live Supabase gate
+USER_UUID = render_login_gate()
 
-if st.session_state["authentication_status"] == False:
-    st.error('Username/password is incorrect')
-elif st.session_state["authentication_status"] == None:
-    st.warning('Please enter your username and password')
-elif st.session_state["authentication_status"]:
-    # --- AUTHENTICATED AREA ---
-    name = st.session_state["name"]
-    username = st.session_state["username"]
-    USER_UUID = "59a513cd-1a19-4f5a-bd9d-ca76241bcd35" 
-    
+# If the gate passes, USER_UUID will contain the live, unique string from the cloud database
+if USER_UUID:
+    # --- AUTHENTICATED SYSTEM ENVIRONMENT AREA ---
+    user_email = st.session_state.get("user_email", "User Account")
+    is_anonymous = (USER_UUID == "ANONYMOUS")
+
     with st.sidebar:
-        st.write(f"Welcome, **{name}**")
-        authenticator.logout(button_name='Logout', location='sidebar')
+        st.write(f"Connected: **{user_email}**")
+        if st.button("Log Out", use_container_width=True):
+            logout_user()
         st.divider()
-        
+         
         st.header("Settings")
-        # Feature 1: Stateless vs. Stateful Toggle
-        save_state = st.checkbox("Enable Cloud Sync (Stateful)", value=True, 
-                                 help="Automatically loads your history and saves new uploads securely.")
-        
+
+        # Smart Cloud Sync Configuration based on Anon vs Registered User
+        if is_anonymous:
+            # Force cloud sync off and disable the checkbox for anonymous users
+            save_state = st.checkbox(
+                "Enable Cloud Sync (Stateful)", 
+                value=False, 
+                disabled=True,
+                help="Cloud Sync is unavailable in anonymous mode. Create an account to save data persistently."
+            )
+        else:
+            # Normal registered user operation
+            save_state = st.checkbox(
+                "Enable Cloud Sync (Stateful)", 
+                value=True, 
+                help="Automatically loads your history and saves new uploads securely."
+            )
+            
         uploaded_files = st.file_uploader(
             "Upload Xcel Bills (PDF)", 
             type="pdf", 
@@ -49,7 +60,7 @@ elif st.session_state["authentication_status"]:
         
         # Feature 2: Smart System Cost (Cloud-prefilled if stateful)
         default_cost = 15000
-        if save_state:
+        if save_state and not is_anonymous:
             try:
                 if 'system_cost_cloud' not in st.session_state:
                     st.session_state.system_cost_cloud = fetch_system_cost(USER_UUID) or 15000
@@ -60,15 +71,12 @@ elif st.session_state["authentication_status"]:
         system_cost = st.number_input("Total System Cost ($)", value=int(default_cost), step=500)
         
         # Save system cost back to cloud if it changes
-        if save_state and system_cost != default_cost:
+        if save_state and not is_anonymous and system_cost != default_cost:
             try:
                 update_system_cost(USER_UUID, system_cost)
                 st.session_state.system_cost_cloud = system_cost
             except Exception:
                 pass
-
-        st.divider()
-        privacy_mode = st.toggle("Privacy Mode", value=False, help="Redact metadata in the table view.")
 
     # Main Page Layout Headers
     col1, col2 = st.columns([3, 1])
@@ -97,7 +105,7 @@ elif st.session_state["authentication_status"]:
     known_dates = set()
 
     # Stream 1: Gather Cloud Data first (if opted-in)
-    if save_state:
+    if save_state and not is_anonymous:
         try:
             cloud_records = fetch_user_history(USER_UUID)
             for record in cloud_records:
@@ -113,7 +121,9 @@ elif st.session_state["authentication_status"]:
                     'Usage_On_Peak': float(record['usage_on_peak']),
                     'Usage_Off_Peak': float(record['usage_off_peak']),
                     'Gen_On_Peak': float(record['gen_on_peak']),
-                    'Gen_Off_Peak': float(record['gen_off_peak'])
+                    'Gen_Off_Peak': float(record['gen_off_peak']),
+                    'On_Peak_Rate': float(record.get('on_peak_rate', 0.0)),
+                    'Off_Peak_Rate': float(record.get('off_peak_rate', 0.0))
                 })
                 known_dates.add(bill_dt)
         except Exception as e:
@@ -149,7 +159,9 @@ elif st.session_state["authentication_status"]:
                         'Usage_On_Peak': float(bill_data.delivered_by_xcel.on_peak_kwh),
                         'Usage_Off_Peak': float(bill_data.delivered_by_xcel.off_peak_kwh),
                         'Gen_On_Peak': float(bill_data.delivered_by_customer.on_peak_kwh),
-                        'Gen_Off_Peak': float(bill_data.delivered_by_customer.off_peak_kwh)
+                        'Gen_Off_Peak': float(bill_data.delivered_by_customer.off_peak_kwh),
+                        'On_Peak_Rate': float(bill_data.on_peak_rate),   # Adjust to match your parser property names
+                        'Off_Peak_Rate': float(bill_data.off_peak_rate)
                     }
                     processed_bills.append(payload)
                     known_dates.add(bill_dt)
@@ -324,16 +336,10 @@ elif st.session_state["authentication_status"]:
             st.plotly_chart(fig_bank, width="stretch")
 
         with tab3:
-            if privacy_mode:
-                cols_to_hide = ['Account Number', 'Service Address', 'Statement Number']
-                display_df = df.drop(columns=[c for c in cols_to_hide if c in df.columns])
-            else:
-                display_df = df
-            
-            st.dataframe(display_df, width="stretch")
+            st.dataframe(df, width="stretch")
             st.divider()
             
-            if save_state:
+            if save_state and not is_anonymous:
                 st.caption(f"🔒 Account status: Connected. Real-time encryption active for User UID: {USER_UUID}")
             else:
                 st.caption("🔒 Account status: Stateless. No cloud connection active.")

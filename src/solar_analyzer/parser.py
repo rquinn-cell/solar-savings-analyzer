@@ -3,7 +3,7 @@ import re
 import pdfplumber
 from decimal import Decimal
 from datetime import datetime
-from solar_analyzer.models import XcelSolarBill, EnergyUsage
+from src.solar_analyzer.models import XcelSolarBill, EnergyUsage
 
 # Get the directory where THIS script is located
 #BASE_DIR = os.path.dirname(os.path.abspath(__file__))

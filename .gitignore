@@ -9,4 +9,4 @@ bills/
 *.pdf
 data/raw_data.json
 .env
-.toml
+*.toml

@@ -21,7 +21,7 @@ def render_login_gate():
         return st.session_state.user_uuid
 
     st.title("☀️ Solar ROI Analyzer")
-    st.caption("Secure multi-tenant platform for Xcel Energy infrastructure management.")
+    st.caption("Secure solar savings analyzer for Colorado residential Xcel customers.")
 
     # 3-Way Mode selector
     mode = st.radio(

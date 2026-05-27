@@ -353,6 +353,7 @@ if USER_UUID:
                 to separate baseline operational costs from true net metering production. It helps 
                 homeowners validate their solar setup's actual ROI.
                 """)
+                st.markdown("**Developer and Contact Support:** [Rick Quinn](mailto:rquinn@solinservice.com)")
                 st.markdown("**GitHub:** [Source Code & Contributions](https://github.com/rquinn-cell/solar-savings-analyzer)")
                 st.markdown("**License:** MIT License")
                 

@@ -58,12 +58,22 @@ if USER_UUID:
             accept_multiple_files=True
         )
         
-        # Feature 2: Smart System Cost (Cloud-prefilled if stateful)
+        # Feature 2: Smart System Cost (Cloud-prefilled or initializedif stateful)
         default_cost = 15000
         if save_state and not is_anonymous:
             try:
                 if 'system_cost_cloud' not in st.session_state:
-                    st.session_state.system_cost_cloud = fetch_system_cost(USER_UUID) or 15000
+                    cloud_cost = fetch_system_cost(USER_UUID)
+                    
+                    # If cloud_cost is None, this user has a brand new account!
+                    if cloud_cost is None:
+                        # Force initialize their profiles identity row immediately 
+                        # using your default baseline parameters
+                        update_system_cost(USER_UUID, user_email, default_cost)
+                        st.session_state.system_cost_cloud = default_cost
+                    else:
+                        st.session_state.system_cost_cloud = cloud_cost
+                        
                 default_cost = st.session_state.system_cost_cloud
             except Exception:
                 pass
@@ -73,7 +83,7 @@ if USER_UUID:
         # Save system cost back to cloud if it changes
         if save_state and not is_anonymous and system_cost != default_cost:
             try:
-                update_system_cost(USER_UUID, system_cost)
+                update_system_cost(USER_UUID, user_email, system_cost)
                 st.session_state.system_cost_cloud = system_cost
             except Exception:
                 pass
@@ -94,7 +104,7 @@ if USER_UUID:
     # Analytics Heartbeat
     if 'analytics_logged' not in st.session_state:
         try:
-            log_analytics_event("app_load")
+            log_analytics_event("app_load", user_uuid=USER_UUID, user_email=user_email)
             st.session_state.analytics_logged = True
             st.toast("Database Connected: Heartbeat Sent!")
         except Exception as e:

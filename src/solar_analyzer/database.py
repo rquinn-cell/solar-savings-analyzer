@@ -56,31 +56,69 @@ def fetch_user_history(user_id):
 
 def fetch_system_cost(user_id):
     supabase = get_supabase_client()
-    response = supabase.table("profiles")\
-        .select("system_cost")\
-        .eq("id", user_id)\
-        .single()\
-        .execute()
-    return response.data['system_cost'] if response.data else 0
-
-def update_system_cost(user_id: str, system_cost: float):
+    try:
+        response = supabase.table("profiles")\
+            .select("system_cost")\
+            .eq("id", user_id)\
+            .single()\
+            .execute()
+        # Check if the list contains at least one record matching the UUID
+        if response.data and len(response.data) > 0:
+            return response.data[0]['system_cost']
+        
+        # Return None if the user profile doesn't exist on disk yet
+        return None
+    except Exception as e:
+        print(f"Error fetching system cost for user {user_id}: {e}")
+        return None
+    
+def update_system_cost(user_id: str, user_email: str, system_cost: float):
     """
     Updates or inserts the total system cost for a given user in the profiles table.
+    And creates the profile if it doesn't exist yet. This allows us to persist the user's system cost
     """
     supabase = get_supabase_client()
     
-    # We use upsert so it handles both new accounts and modifications seamlessly
-    result = supabase.table("profiles").upsert(
-        {
-            "id": user_id, 
-            "system_cost": float(system_cost)
-        },
-        on_conflict="id"
-    ).execute()
-    
-    return result
+    try:
+        current_time = datetime.utcnow().isoformat()
 
-def log_analytics_event(event_type):
-    """Tracks non-PII events like 'app_load' or 'bill_parsed'."""
+        payload = {
+            "id": user_id,
+            "system_cost": float(system_cost),
+            "user_email": user_email,
+            "updated_at": current_time
+        }
+
+        # We use upsert so it handles both new accounts and modifications seamlessly
+        result = supabase.table("profiles").upsert(
+            payload,
+            on_conflict="id"
+        ).execute()
+    
+        return result
+
+    except Exception as e:
+        print(f"Profile error: Failed to save profile for {user_email}: {e}")
+
+def log_analytics_event(event_type: str, user_uuid: str = "ANONYMOUS", user_email: str = "Anonymous Sandbox"):
+    """
+    Logs an application telemetry heartbeat event directly to Supabase.
+    Bypasses implicit SELECT queries using returning='minimal' to prevent RLS read blockages.
+    """
+
     supabase = get_supabase_client()
-    supabase.table("site_metrics").insert({"event_type": event_type}).execute()
+
+    try:
+        payload = {
+            "event_type": event_type,
+            "user_uuid": user_uuid,
+            "user_email": user_email
+        }
+        
+        # 'returning="minimal"' instructs Postgrest not to send a RETURNING * clause,
+        # completely preventing post-insert read crashes.
+        supabase.table("site_metrics").insert(payload, returning="minimal").execute()
+        
+    except Exception as e:
+        # Graceful logging so background telemetry failures never crash the user's UI
+        print(f"Telemetry warning: Failed to log event '{event_type}': {e}")

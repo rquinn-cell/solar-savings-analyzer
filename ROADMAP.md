@@ -11,7 +11,7 @@ Upgrade the database schemas and data-collection layers to inject plain-text ema
 
 #### 1. Database Schema Alterations (Supabase SQL Editor)
 
-- [ ] Modify site_metrics Table: Add explicit columns to capture session identities.
+- [x] Modify site_metrics Table: Add explicit columns to capture session identities.
 
 ```sql
 ALTER TABLE public.site_metrics 
@@ -19,27 +19,27 @@ ADD COLUMN user_uuid VARCHAR(255) DEFAULT 'ANONYMOUS',
 ADD COLUMN user_email VARCHAR(255) DEFAULT 'Anonymous Sandbox';
 ```
 
-- [ ] Modify profiles Table: Ensure username/email is explicitly captured alongside the UUID configuration.
+- [x] Modify profiles Table: Ensure username/email is explicitly captured alongside the UUID configuration.
 
 ```sql
 ALTER TABLE public.profiles 
 ADD COLUMN user_email VARCHAR(255) NOT NULL DEFAULT 'unassigned@example.com';
 ```
 
-- [ ] Verify RLS Security Boundaries: Ensure that adding user_email columns does not alter row security rules. Confirm that `USING (auth.uid() = user_id)` (or matching UUID target) remains the primary hardware-enforced isolation shield.
+- [x] Verify RLS Security Boundaries: Ensure that adding user_email columns does not alter row security rules. Confirm that `USING (auth.uid() = user_id)` (or matching UUID target) remains the primary hardware-enforced isolation shield.
 
 #### 2. Codebase Refactoring (src/)
 
-- [ ] Update Analytics Layer (database.py): Rewrite `log_analytics_event()` to accept and process user context strings:
+- [x] Update Analytics Layer (database.py): Rewrite `log_analytics_event()` to accept and process user context strings:
 
 ```python
 def log_analytics_event(event_type: str, user_uuid: str = "ANONYMOUS", user_email: str = "Anonymous Sandbox"):
     # Logic to pass both identifiers inside the insert dict payload
 ```
 
-- [ ] Update Application Bootstrap (app.py): Pass `st.session_state.user_uuid` and `st.session_state.user_email` dynamically into the tracking heartbeat engine whenever the dashboard boots up or an operation fires.
+- [x] Update Application Bootstrap (app.py): Pass `st.session_state.user_uuid` and `st.session_state.user_email` dynamically into the tracking heartbeat engine whenever the dashboard boots up or an operation fires.
 
-- [ ] Update Profile Management Pipeline: Modify the logic that creates or updates profile data so it captures and saves the logged-in user's email address straight to the cloud row.
+- [x] Update Profile Management Pipeline: Modify the logic that creates or updates profile data so it captures and saves the logged-in user's email address straight to the cloud row.
 
 ## 📈 Future Milestones & Feature Backlog
 

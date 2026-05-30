@@ -62,15 +62,34 @@ def fetch_system_cost(user_id):
             .eq("id", user_id)\
             .single()\
             .execute()
-        # Check if the list contains at least one record matching the UUID
-        if response.data and len(response.data) > 0:
-            return response.data[0]['system_cost']
         
-        # Return None if the user profile doesn't exist on disk yet
-        return None
+        # Guard check: Ensure we have actual data back
+        if not response or not hasattr(response, 'data') or not response.data:
+            return None
+            
+        data = response.data
+        
+        # Scenario A: Supabase returned a list of dictionaries (Standard Behavior)
+        if isinstance(data, list):
+            if len(data) > 0 and isinstance(data[0], dict):
+                return data[0].get('system_cost')
+            return None
+            
+        # Scenario B: Supabase returned a single dictionary directly
+        if isinstance(data, dict):
+            return data.get('system_cost')
+            
+        return None    
+
     except Exception as e:
-        print(f"Error fetching system cost for user {user_id}: {e}")
+        # Deliberately extract raw details from the Supabase exception object
+        import traceback
+        print("--- COMPLETE LOG RECOVERY STACK ---")
+        traceback.print_exc()
+        print(f"Details: {repr(e)}")
         return None
+#        print(f"Error fetching system cost for user {user_id}: {e}")
+#        return None
     
 def update_system_cost(user_id: str, user_email: str, system_cost: float):
     """

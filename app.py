@@ -58,7 +58,7 @@ if USER_UUID:
             accept_multiple_files=True
         )
         
-        # Feature 2: Smart System Cost (Cloud-prefilled or initializedif stateful)
+        # Feature 2: Smart System Cost (Cloud-prefilled or initialized if stateful)
         default_cost = 15000
         if save_state and not is_anonymous:
             try:
@@ -81,7 +81,7 @@ if USER_UUID:
         system_cost = st.number_input("Total System Cost ($)", value=int(default_cost), step=500)
         
         # Save system cost back to cloud if it changes
-        if save_state and not is_anonymous and system_cost != default_cost:
+        if save_state and not is_anonymous and system_cost != st.session_state.get('system_cost_cloud', default_cost):
             try:
                 update_system_cost(USER_UUID, user_email, system_cost)
                 st.session_state.system_cost_cloud = system_cost

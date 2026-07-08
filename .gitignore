@@ -11,3 +11,4 @@ data/raw_data.json
 .env
 *.toml
 .vscode/
+.github/issues/*

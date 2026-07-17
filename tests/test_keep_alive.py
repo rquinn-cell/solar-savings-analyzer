@@ -45,7 +45,7 @@ def test_log_ping_event_mocked():
 
 
 @pytest.mark.skipif(
-    False,  # Default to skipped on CI. We can toggle this when SECRETS are present locally.
+    True,  # skip integration test unless explicitly enabled
     reason="Requires live Supabase credentials in Streamlit secrets"
 )
 def test_log_ping_event_integration():

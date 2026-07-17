@@ -141,3 +141,25 @@ def log_analytics_event(event_type: str, user_uuid: str = "ANONYMOUS", user_emai
     except Exception as e:
         # Graceful logging so background telemetry failures never crash the user's UI
         print(f"Telemetry warning: Failed to log event '{event_type}': {e}")
+
+
+def log_ping_event(ping_source: str, status: str = "success"):
+    """
+    Logs keep-alive ping events to a dedicated database logging table 'ping_log'.
+    This isolates the high-frequency server state check logs from primary site analytics.
+    """
+    supabase = get_supabase_client()
+    try:
+        # Use Python 3.13 timezone-aware datetime standard (datetime.now(timezone.utc))
+        # to prevent utcnow deprecation warnings.
+        from datetime import timezone
+        payload = {
+            "ping_source": ping_source,
+            "status": status,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        supabase.table("ping_log").insert(payload, returning="minimal").execute()
+    except Exception as e:
+        # Graceful logging to prevent any server interruptions
+        print(f"Ping telemetry warning: Failed to log ping event from {ping_source}: {e}")
+

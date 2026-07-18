@@ -1,0 +1,20 @@
+name: Streamlit Keep-Alive
+
+on:
+  schedule:
+    # Runs every 12 hours (Streamlit apps sleep after 48 consecutive hours of inactivity)
+    - cron: '0 */12 * * *'
+  workflow_dispatch: # Allows you to trigger it manually from GitHub for testing
+
+jobs:
+  wake-up-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Wake up Streamlit App
+        uses: ToroData/Streamlit-App-KeepAlive@v2.0.0
+        with:
+          # Replace with your exact production URL + your custom query parameter
+          url: "https://streamlit.app"

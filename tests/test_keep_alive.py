@@ -45,7 +45,8 @@ def test_log_ping_event_mocked():
 
 
 @pytest.mark.skipif(
-    True,  # skip integration test unless explicitly enabled
+    True,  # True = skip integration test unless explicitly enabled
+    #False,  # False = enable live integration test
     reason="Requires live Supabase credentials in Streamlit secrets"
 )
 def test_log_ping_event_integration():
@@ -65,6 +66,7 @@ def test_app_ping_router_bypasses_or_stops():
     Simulates Streamlit query routing to ensure that the keep-alive hook in app.py
     intercepts with st.stop() when "?ping=" is passed, and executes normally otherwise.
     """
+    import sys 
     with patch("streamlit.query_params") as mock_params, \
          patch("src.solar_analyzer.database.log_ping_event") as mock_log, \
          patch("streamlit.stop") as mock_stop, \
@@ -77,7 +79,6 @@ def test_app_ping_router_bypasses_or_stops():
         mock_gate.return_value = "ANONYMOUS"
 
         # We manually import app.py to trigger execution flow
-        import sys
         if "app" in sys.modules:
             del sys.modules["app"]
         import app  # noqa
@@ -100,9 +101,9 @@ def test_app_ping_router_bypasses_or_stops():
         mock_stop.side_effect = Exception("st.stop called")
 
         # Setup mock parameters containing "ping" and "source"
-        mock_params.__contains__.side_effect = lambda key: key == "ping"
+        mock_params.__contains__.side_effect = lambda key: key == "action_wakeup"
         # Avoid get side effect error by simulating dictionary style retrieval
-        mock_params.get = MagicMock(side_effect=lambda key, default=None: "cron-job.org" if key == "source" else "true")
+        mock_params.get = MagicMock(side_effect=lambda key, default=None: "action_wakeup" if key == "source" else "true")
 
         # Re-trigger app.py execution
         if "app" in sys.modules:
@@ -110,10 +111,10 @@ def test_app_ping_router_bypasses_or_stops():
         try:
             import app  # noqa
         except Exception as e:
-            # We expect the mock st.stop() exception to be raised, halting the rest of app.py!
+            # We expect the mock sys.exit() exception to be raised, halting the rest of app.py!
             assert str(e) == "st.stop called"
         # Verify the router caught the ping, logged it, and stopped processing the page
-        mock_log.assert_called_once_with(ping_source="cron-job.org", status="success")
+        mock_log.assert_called_once_with(ping_source="github_action_keepalive", status="success")
         mock_stop.assert_called_once()
         # Since the exception halted execution, render_login_gate was safely bypassed!
         mock_gate.assert_not_called()

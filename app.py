@@ -14,24 +14,29 @@ from src.solar_analyzer.database import (
 import tempfile
 import os
 from src.solar_analyzer.auth import render_login_gate, logout_user
+import sys
 
-# Set page config must be at the very top before any other Streamlit calls
-st.set_page_config(page_title="Solar ROI Dashboard", layout="wide")
 
 # --- EARLY ROUTER FOR KEEP-ALIVE PINGS ---
 # By handling this before loading heavy UI, database select sessions, or authentication gates,
 # we drastically lower memory consumption and speed up external HTTP keep-alive pings.
+# We are now using GitHub Actions as our primary keep-alive source, using a headless browser to ping the app every 15 minutes. This prevents Streamlit from idling out and losing session state.
 query_params = st.query_params
-if "ping" in query_params:
+if "action_wakeup" in query_params and query_params.get("action_wakeup") == "secure_runner_77":
     ping_source = query_params.get("source", "unspecified_cron")
     from src.solar_analyzer.database import log_ping_event
     try:
         log_ping_event(ping_source=ping_source, status="success")
-        st.success(f"Keep-Alive Handshake Complete: Logged from {ping_source}!")
+        st.text("Wakeup verified. Database logged successfully.")
     except Exception as e:
-        st.error(f"Keep-Alive Logging Failed: {e}")
-    # Stop processing the rest of the app for ping requests to keep it incredibly lightweight
+        st.text(f"Database logging failed: {e}")
+
+    # Force exit Python completely to bypass the Streamlit auth render loop
     st.stop()
+
+# Set page config must be at the very top before any other Streamlit calls
+st.set_page_config(page_title="Solar ROI Dashboard", layout="wide")
+
 
 # Render our new live Supabase gate
 USER_UUID = render_login_gate()

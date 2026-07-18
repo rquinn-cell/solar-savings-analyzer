@@ -35,7 +35,7 @@ jobs:
           
           try:
               print("Launching browser and hitting secure Streamlit endpoint...")
-              target_url = "https://streamlit.app"
+              target_url = "https://solar-savings-analyzer.streamlit.app/?action_wakeup=secure_runner_77&source=github_action_keepalive"
               driver.get(target_url)
               
               # 2. Give Streamlit 15 seconds to execute your top-level database script

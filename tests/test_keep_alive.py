@@ -88,7 +88,7 @@ def test_app_ping_router_bypasses_or_stops():
         mock_stop.assert_not_called()
         mock_gate.assert_called()  # It successfully proceeded to the login gate!
 
-        # Scenario B: Keep-alive request (with "?ping=true&source=cron-job.org")
+        # Scenario B: Keep-alive request (with "?action_wakeup=secure_runner_77&source=github_action_keepalive")
         mock_log.reset_mock()
         mock_stop.reset_mock()
         mock_gate.reset_mock()
@@ -101,9 +101,18 @@ def test_app_ping_router_bypasses_or_stops():
         mock_stop.side_effect = Exception("st.stop called")
 
         # Setup mock parameters containing "ping" and "source"
-        mock_params.__contains__.side_effect = lambda key: key == "action_wakeup"
+        mock_params.__contains__.side_effect = lambda key: key in ["action_wakeup", "source"]
+
+        # 2. FIX: Return the correct cryptographic secret value and source value 
+        def mock_get_router(key, default=None):
+            if key == "action_wakeup":
+                return "secure_runner_77"
+            if key == "source":
+                return "github_action_keepalive"
+            return default
+
         # Avoid get side effect error by simulating dictionary style retrieval
-        mock_params.get = MagicMock(side_effect=lambda key, default=None: "action_wakeup" if key == "source" else "true")
+        mock_params.get = MagicMock(side_effect=mock_get_router)
 
         # Re-trigger app.py execution
         if "app" in sys.modules:

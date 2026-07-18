@@ -10,17 +10,12 @@ jobs:
   wake-up-app:
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
       - name: Install Selenium
-        run: pip install selenium
+        run: pip3 install selenium
 
       - name: Execute Headless Browser Wakeup
         run: |
-          python - <<EOF
+          python3 - <<EOF
           import time
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options

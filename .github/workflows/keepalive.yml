@@ -10,11 +10,40 @@ jobs:
   wake-up-app:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Wake up Streamlit App
-        uses: ToroData/Streamlit-App-KeepAlive@main
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          # Replace with your exact production URL + your custom query parameter
-          url: "https://solar-savings-analyzer.streamlit.app?action_wakeup=secure_runner_77&source=github_action_keepalive"
+          python-version: '3.10'
+
+      - name: Install Selenium
+        run: pip install selenium
+
+      - name: Execute Headless Browser Wakeup
+        run: |
+          python - <<EOF
+          import time
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+
+          # 1. Configure Chrome to run headlessly in the GitHub runner
+          chrome_options = Options()
+          chrome_options.add_argument("--headless=new")
+          chrome_options.add_argument("--no-sandbox")
+          chrome_options.add_argument("--disable-dev-shm-usage")
+
+          driver = webdriver.Chrome(options=chrome_options)
+          
+          try:
+              print("Launching browser and hitting secure Streamlit endpoint...")
+              target_url = "https://streamlit.app"
+              driver.get(target_url)
+              
+              # 2. Give Streamlit 15 seconds to execute your top-level database script
+              print("Waiting for Streamlit app execution and database logging...")
+              time.sleep(15)
+              print("Wakeup sequence successfully completed!")
+          except Exception as e:
+              print(f"Browser automation failed: {e}")
+          finally:
+              driver.quit()
+          EOF

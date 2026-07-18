@@ -17,4 +17,4 @@ jobs:
         uses: ToroData/Streamlit-App-KeepAlive@v2.0.0
         with:
           # Replace with your exact production URL + your custom query parameter
-          url: "https://streamlit.app"
+          url: "https://solar-savings-analyzer.streamlit.app?action_wakeup=secure_runner_77&source=github_action_keepalive"

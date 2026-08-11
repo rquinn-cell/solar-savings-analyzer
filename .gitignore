@@ -12,3 +12,7 @@ data/raw_data.json
 *.toml
 .vscode/
 .github/issues/*
+supabase/.temp/
+supabase/.cache/
+supabase/.branches/
+.branches/

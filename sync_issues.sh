@@ -13,9 +13,9 @@ else
     mkdir -p "$ISSUE_DIR"
 fi
 
-# 2. Fetch active open issues using the safe JSON data channel
-echo "📥 Fetching current open issues from GitHub..."
-RAW_ISSUES=$(gh issue list --state open --limit 50 --json number,title,body,createdAt,author 2>/dev/null)
+# 2. Fetch active open issues INCLUDING nested comments via the JSON data channel
+echo "📥 Fetching current open issues and comments from GitHub..."
+RAW_ISSUES=$(gh issue list --state open --limit 50 --json number,title,body,createdAt,author,comments 2>/dev/null)
 
 # Verify if the GitHub CLI returned a valid array or if it's empty
 if [ -z "$RAW_ISSUES" ] || [ "$RAW_ISSUES" == "[]" ]; then
@@ -31,6 +31,15 @@ echo "$RAW_ISSUES" | jq -c '.[]' | while read -r row; do
   date=$(echo "$row" | jq -r '.createdAt')
   body=$(echo "$row" | jq -r '.body')
 
+  # Format comments into a readable Markdown block using jq
+  comments_formatted=$(echo "$row" | jq -r '
+    if (.comments | length) > 0 then
+      .comments[] | "### Comment by @" + .author.login + " on " + .createdAt + "\n\n" + .body + "\n"
+    else
+      "*No comments on this issue yet.*"
+    end
+  ')
+
   # Write out a clean, properly formatted markdown file
   cat << EOF > "$ISSUE_DIR/issue-$num.md"
 # Issue #$num: $title
@@ -39,7 +48,10 @@ echo "$RAW_ISSUES" | jq -c '.[]' | while read -r row; do
 
 ## Description
 $body
+
+## Comments & Discussion
+$comments_formatted
 EOF
 done
 
-echo "🎉 Done! Your local issue backlog is perfectly up to date."
+echo "🎉 Done! Your local issue backlog and thread comments are perfectly up to date."

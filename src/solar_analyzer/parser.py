@@ -80,23 +80,36 @@ def parse_xcel_pdf(path):
         start_dt = parse_date(dates_match.group(1)) if dates_match else None
         end_dt = parse_date(dates_match.group(2)) if dates_match else None
 
-        # 5a. Monthly Bank Contribution (The April Bill "No Decimal" Fix)
-        # Matches "Other Recurring Charges" then looks for digits/spaces
-        # this is actually matching the monthly contribution line
-        bank_pat = r"Other\s*Recurring\s*Charges[\s\S]*?\$?\s*([\d\s\.,]{2,7})"
+        # 5a. Monthly Bank Contribution (Handling Credits & OCR Space-Decimals)
+        # Matches "Other Recurring Charges", capturing negative signs, digits/spaces, and CR flags
+        bank_pat = r"Other\s*Recurring\s*Charges[\s\S]*?([-\$]?\s*\$?\s*[\d\s\.,]{2,8}\d)\s*(CR)?"
         bank_match = re.search(bank_pat, page_1_text)
         
         monthly_bank_contribution = Decimal("0.00")
         if bank_match:
             raw_val = bank_match.group(1).strip()
-            # If we see "24 19" (space instead of dot), fix it
-            if " " in raw_val and "." not in raw_val:
-                raw_val = raw_val.replace(" ", ".")
+            cr_label = bank_match.group(2)
             
-            # Clean up commas and remaining spaces
-            clean_val = raw_val.replace(',', '').replace(' ', '')
-            if clean_val:
-                monthly_bank_contribution = Decimal(clean_val)
+            # Detect credit indicators
+            is_negative = ("-" in raw_val) or (cr_label == "CR")
+            
+            # Strip non-numeric characters
+            clean_str = raw_val.replace('-', '').replace('$', '').strip()
+            
+            # Handle pdfplumber OCR "87 46" space-decimal anomaly
+            if " " in clean_str and "." not in clean_str:
+                clean_str = clean_str.replace(" ", ".")
+            
+            clean_str = clean_str.replace(',', '').replace(' ', '')
+            if clean_str:
+                val = Decimal(clean_str)
+                monthly_bank_contribution = -abs(val) if is_negative else val
+
+        # Adjust total_electric_due if a bank credit was applied on Page 1
+        # (e.g., Electricity Service subtotal modified by Other Recurring Charges)
+        if monthly_bank_contribution < Decimal("0.00"):
+            # Ensure net electric due reflects the applied credit
+            total_electric_due = max(Decimal("0.00"), total_electric_due + monthly_bank_contribution)
 
         ## --- Page 2: Meter Data ---
         #page_2_text = pdf.pages[1].extract_text()

@@ -1,21 +1,25 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import tempfile
+import os
+
 from src.solar_analyzer.parser import parse_xcel_pdf
 from src.solar_analyzer.calculator import SolarSavingsCalculator
-# Added fetch_user_history and fetch_system_cost here:
 from src.solar_analyzer.database import (
     log_analytics_event, 
     save_bills_to_history, 
     fetch_user_history, 
     fetch_system_cost,
-    update_system_cost
+    update_system_cost,
+    log_ping_event
 )
-import tempfile
-import os
 from src.solar_analyzer.auth import render_login_gate, logout_user
 import sys
 
+# Target synthetic Demo User UUID
+DEMO_USER_UUID = "f98b28b9-7a38-4342-8494-3ca5976cefb4"
 
 # --- EARLY ROUTER FOR KEEP-ALIVE PINGS ---
 # By handling this before loading heavy UI, database select sessions, or authentication gates,
@@ -24,7 +28,6 @@ import sys
 query_params = st.query_params
 if "action_wakeup" in query_params and query_params.get("action_wakeup") == "secure_runner_77":
     ping_source = query_params.get("source", "unspecified_cron")
-    from src.solar_analyzer.database import log_ping_event
     try:
         log_ping_event(ping_source=ping_source, status="success")
         st.text("Wakeup verified. Database logged successfully.")
@@ -34,35 +37,43 @@ if "action_wakeup" in query_params and query_params.get("action_wakeup") == "sec
     # Force exit Python completely to bypass the Streamlit auth render loop
     st.stop()
 
-# Set page config must be at the very top before any other Streamlit calls
+# --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Solar ROI Dashboard", layout="wide")
 
-
-# Render our new live Supabase gate
+# --- AUTHENTICATION & DEMO GATE ---
+# render_login_gate() returns USER_UUID, or DEMO_USER_UUID if the user selected Demo Mode
 USER_UUID = render_login_gate()
 
 # If the gate passes, USER_UUID will contain the live, unique string from the cloud database
 if USER_UUID:
-    # --- AUTHENTICATED SYSTEM ENVIRONMENT AREA ---
-    user_email = st.session_state.get("user_email", "User Account")
+    # State flags
+    is_demo = (USER_UUID == DEMO_USER_UUID)
     is_anonymous = (USER_UUID == "ANONYMOUS")
+    # Read-only mode applies to Demo sessions or Anonymous sessions
+    is_read_only = is_demo or is_anonymous
 
+    # Set user label for UI
+    if is_demo:
+        user_email = "Demo User (Read-Only)"
+    else:
+        user_email = st.session_state.get("user_email", "User Account")
+
+    # --- SIDEBAR CONTROL PANEL ---
     with st.sidebar:
         st.write(f"Connected: **{user_email}**")
-        if st.button("Log Out", use_container_width=True):
+        if st.button("Log Out / Exit Demo", use_container_width=True):
             logout_user()
         st.divider()
          
         st.header("Settings")
 
-        # Smart Cloud Sync Configuration based on Anon vs Registered User
-        if is_anonymous:
-            # Force cloud sync off and disable the checkbox for anonymous users
+        # Smart Cloud Sync Configuration
+        if is_read_only:
             save_state = st.checkbox(
                 "Enable Cloud Sync (Stateful)", 
                 value=False, 
                 disabled=True,
-                help="Cloud Sync is unavailable in anonymous mode. Create an account to save data persistently."
+                help="Cloud Sync is unavailable in Demo/Anonymous mode."
             )
         else:
             # Normal registered user operation
@@ -72,15 +83,18 @@ if USER_UUID:
                 help="Automatically loads your history and saves new uploads securely."
             )
             
+        # File uploader (Disabled in Demo Mode)
         uploaded_files = st.file_uploader(
             "Upload Xcel Bills (PDF)", 
             type="pdf", 
-            accept_multiple_files=True
+            accept_multiple_files=True,
+            disabled=is_demo,
+            help="PDF upload is disabled in Demo Mode. Log in with a free account to upload personal statements."
         )
         
-        # Feature 2: Smart System Cost (Cloud-prefilled or initialized if stateful)
+        # System Cost Initialization
         default_cost = 15000
-        if save_state and not is_anonymous:
+        if save_state and not is_read_only:
             try:
                 if 'system_cost_cloud' not in st.session_state:
                     cloud_cost = fetch_system_cost(USER_UUID)
@@ -100,42 +114,49 @@ if USER_UUID:
                 
         system_cost = st.number_input("Total System Cost ($)", value=int(default_cost), step=500)
         
-        # Save system cost back to cloud if it changes
-        if save_state and not is_anonymous and system_cost != st.session_state.get('system_cost_cloud', default_cost):
+        if save_state and not is_read_only and system_cost != st.session_state.get('system_cost_cloud', default_cost):
             try:
                 update_system_cost(USER_UUID, user_email, system_cost)
                 st.session_state.system_cost_cloud = system_cost
             except Exception:
                 pass
 
-    # Main Page Layout Headers
+    # --- MAIN PAGE HEADER ---
     col1, col2 = st.columns([3, 1])
     with col1:
         st.title("☀️ Xcel Solar ROI Analyzer")
         st.markdown("Calculate true savings, manage infrastructure ROI, and monitor your Solar Bank.")
     with col2:
-        # Move Sync Button to Top Header for manual control/visual status
         if save_state:
-            st.write("") # padding
+            st.write("") 
             if st.button("🔄 Force Cloud Sync"):
                 st.cache_data.clear()
                 st.rerun()
 
-    # Analytics Heartbeat
+    # --- DEMO BANNER ---
+    if is_demo:
+        st.info("⚡ **Interactive Demo Mode Active:** Displaying sample Xcel TOU bill analysis (Read-Only).")
+
+    # --- ANALYTICS HEARTBEAT ---
     if 'analytics_logged' not in st.session_state:
         try:
-            log_analytics_event("app_load", user_uuid=USER_UUID, user_email=user_email)
+            event_type = "demo_load" if is_demo else "app_load"
+            log_analytics_event(event_type, user_uuid=USER_UUID, user_email=user_email)
             st.session_state.analytics_logged = True
-            st.toast("Database Connected: Heartbeat Sent!")
+            if not is_demo:
+                st.toast("Database Connected: Heartbeat Sent!")
         except Exception as e:
-            st.error(f"Database Connection Failed: {e}")
-
+            if not is_demo:
+                st.error(f"Database Connection Failed: {e}")
+            else:
+                pass
+            
     # --- UNIFIED DATA EXTRACTION STREAM ---
     processed_bills = []
     known_dates = set()
 
-    # Stream 1: Gather Cloud Data first (if opted-in)
-    if save_state and not is_anonymous:
+    # Stream 1: Fetch Cloud Data (For logged-in stateful users OR Demo user read-only session)
+    if save_state or is_demo:
         try:
             cloud_records = fetch_user_history(USER_UUID)
             for record in cloud_records:
@@ -157,10 +178,10 @@ if USER_UUID:
                 })
                 known_dates.add(bill_dt)
         except Exception as e:
-            st.sidebar.error(f"Failed to load cloud history: {e}")
+            st.sidebar.error(f"Failed to load bill history: {e}")
 
     # Stream 2: Gather PDF Upload Data
-    if uploaded_files:
+    if uploaded_files and not is_demo:
         new_bills_to_sync = []
         with st.spinner(f"Analyzing {len(uploaded_files)} bills..."):
             for uploaded_file in uploaded_files:
@@ -190,7 +211,7 @@ if USER_UUID:
                         'Usage_Off_Peak': float(bill_data.delivered_by_xcel.off_peak_kwh),
                         'Gen_On_Peak': float(bill_data.delivered_by_customer.on_peak_kwh),
                         'Gen_Off_Peak': float(bill_data.delivered_by_customer.off_peak_kwh),
-                        'On_Peak_Rate': float(bill_data.on_peak_rate),   # Adjust to match your parser property names
+                        'On_Peak_Rate': float(bill_data.on_peak_rate),
                         'Off_Peak_Rate': float(bill_data.off_peak_rate)
                     }
                     processed_bills.append(payload)
@@ -211,7 +232,7 @@ if USER_UUID:
             except Exception as e:
                 st.error(f"Auto-save failed: {e}")
 
-    # --- RENDERING PIPELINE (Runs smoothly regardless of data origin) ---
+    # --- RENDERING PIPELINE ---
     if processed_bills:
         df = pd.DataFrame(processed_bills).sort_values('Date')
         df['Cumulative_Savings'] = df['Monthly_Savings'].cumsum()
@@ -226,10 +247,8 @@ if USER_UUID:
         m3.metric("Total Paid to Xcel", f"${total_paid:,.2f}")
         m4.metric("ROI Progress", f"{(total_saved / system_cost) * 100:.1f}%")
 
-        # 4. Visualization Tabs
+        # Visualization Tabs
         tab1, tab2, tab3, tab4 = st.tabs(["Savings Growth", "Energy Balance", "Financial Data", "About & Legal"])
-
-        from plotly.subplots import make_subplots
 
         with tab1:
             fig_savings = make_subplots(
@@ -368,8 +387,9 @@ if USER_UUID:
         with tab3:
             st.dataframe(df, width="stretch")
             st.divider()
-            
-            if save_state and not is_anonymous:
+            if is_demo:
+                st.caption("🔒 Account status: Demo Mode (Read-Only).")
+            elif save_state:
                 st.caption(f"🔒 Account status: Connected. Real-time encryption active for User UID: {USER_UUID}")
             else:
                 st.caption("🔒 Account status: Stateless. No cloud connection active.")
@@ -379,9 +399,8 @@ if USER_UUID:
             with col1:
                 st.subheader("☀️ About the Tool")
                 st.write("""
-                The Xcel Solar ROI Analyzer parses the specific layouts of residential electric bills 
-                to separate baseline operational costs from true net metering production. It helps 
-                homeowners validate their solar setup's actual ROI.
+                The Xcel Solar ROI Analyzer parses residential electric bill summaries to separate 
+                baseline operational costs from true net metering production.
                 """)
                 st.markdown("**Developer and Contact Support:** [Rick Quinn](mailto:rquinn@solinservice.com)")
                 st.markdown("**GitHub:** [Source Code & Contributions](https://github.com/rquinn-cell/solar-savings-analyzer)")
@@ -395,4 +414,4 @@ if USER_UUID:
             st.subheader("Disclaimer")
             st.caption("Estimates are based on extracted PDF data. Not affiliated with Xcel Energy.")
     else:
-        st.info("👈 Upload your Xcel Energy PDF bills in the sidebar, or enable Cloud Sync to populate your dashboard.")
+        st.info("👈 Upload your Xcel Energy PDF bills in the sidebar, or click 'Try Interactive Demo' to explore sample data.")

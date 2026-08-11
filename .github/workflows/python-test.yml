@@ -25,6 +25,9 @@ jobs:
         pip install -r requirements-dev.txt
 
     - name: Run tests with pytest
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       run: |
         export PYTHONPATH=$PYTHONPATH:$(pwd)/src
         pytest
